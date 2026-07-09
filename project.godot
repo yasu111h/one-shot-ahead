@@ -1,0 +1,33 @@
+; Engine configuration file.
+; ONE SHOT AHEAD - 射撃コアプロトタイプ
+
+config_version=5
+
+[application]
+
+config/name="ONE SHOT AHEAD"
+run/main_scene="res://stages/test_range/test_range.tscn"
+config/features=PackedStringArray("4.6")
+boot_splash/bg_color=Color(0.05, 0.07, 0.1, 1)
+boot_splash/show_image=false
+boot_splash/minimum_display_time=0
+
+[autoload]
+
+GameManager="*res://autoload/game_manager.gd"
+
+[display]
+
+window/size/viewport_width=854
+window/size/viewport_height=480
+window/stretch/mode="viewport"
+window/stretch/aspect="expand"
+window/handheld/orientation=0
+window/vsync/vsync_mode=1
+
+[rendering]
+
+renderer/rendering_method="gl_compatibility"
+renderer/rendering_method.mobile="gl_compatibility"
+textures/vram_compression/import_etc2_astc=true
+anti_aliasing/quality/msaa_3d=0
