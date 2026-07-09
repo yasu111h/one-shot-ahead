@@ -6,7 +6,8 @@ extends Node3D
 ##   _build_world()       … 地形/建物
 ##   _spawn_targets()     … 標的の配置（_register / _add_walker を使う）
 ##   _rig_position()      … 狙撃地点
-##   _setup_wind()        … 風（既定はランダム横風）
+##   _setup_wind()        … 風（既定はランダム横風。Ballistics.WIND_ENABLED=false の間は
+##                            弾に影響せずHUDにも出ない。風を復活させたら自動で有効化）
 ##
 ## 操作（TABIJIの操作感・マウスキャプチャなし）:
 ##   視点   … 右ドラッグ（PC）/ 画面右側ドラッグ（タッチ・1本指追跡）
@@ -303,7 +304,8 @@ func _do_fire() -> void:
 		_killcam_cd = KILLCAM_COOLDOWN
 		_start_miss_replay(start, dir)
 		return
-	# 通常弾：実弾（重力・風の毎フレーム積分）を飛ばし、トレーサーを追従させる
+	# 通常弾：実弾（Ballisticsの毎フレーム積分。既定は直線・等速）を飛ばし、
+	# トレーサーを追従させる
 	var bullet := Bullet.new()
 	add_child(bullet)
 	bullet.global_position = start
@@ -400,11 +402,11 @@ func _update_rangefinder() -> void:
 # ---------------------------------------------------------------- オートエイム(TABIJI移植)
 
 ## オートエイム: 狙い(base)の近くにいる標的部位("target_part"グループ)を探し、
-## 吸い付き角の内なら「その部位に実際に命中する発射方向（重力・風の弾道解）」を返す。
+## 吸い付き角の内なら「その部位に実際に命中する発射方向（弾道解）」を返す。
 ## いなければ Vector3.ZERO。部位がカプセルなら中心でなく「芯線上で狙いに最も近い点」へ。
-## ※ TABIJIはヒットスキャンなので部位への直線方向でよいが、本作は実弾道（重力落下・
-##    風流され）のため、直線に吸い付くと必ず下に外れる。吸い付き先を弾道補正済みの
-##    照準解にすることで「ロック＝当たる」が成立する。
+## ※ 弾道解は Ballistics のフラグに従う。現行の直線弾道では部位への直線方向そのもの。
+##    重力・風（GRAVITY_ENABLED / WIND_ENABLED）を復活させた場合は、飛翔時間ぶんの
+##    ドロップを見込んだ照準解に自動で切り替わり「ロック＝当たる」が維持される。
 ## ※ 民間人と、壁の陰にいる標的には吸い付かない（ロック＝当たる、を壊さないため）。
 func _assist_dir(base: Vector3) -> Vector3:
 	var deg := lerpf(assist_deg_hip, assist_deg_scope, rig.aim_blend)
@@ -427,9 +429,10 @@ func _assist_dir(base: Vector3) -> Vector3:
 		if range_k <= 0.0:
 			continue
 		var eff_ang := deg_to_rad(deg) * range_k
-		# 弾道補正：飛翔時間ぶんの重力・風ドロップを見込んだ照準点（上・風上へずらす）
+		# 弾道補正：飛翔時間ぶんのドロップを見込んだ照準点。
+		# Ballistics のフラグに従う（直線弾道＝実効加速度ゼロなら補正なし＝部位そのもの）
 		var tf := d / muzzle_speed
-		var solution := point - (Ballistics.GRAVITY + wind_accel) * (0.5 * tf * tf)
+		var solution := point - Ballistics.effective_accel(wind_accel) * (0.5 * tf * tf)
 		var to := solution - eye
 		var ang := base.angle_to(to.normalized())
 		if ang >= eff_ang or ang >= best_ang:

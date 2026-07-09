@@ -5,11 +5,31 @@ extends RefCounted
 
 const GRAVITY := Vector3(0.0, -9.8, 0.0)
 
+## 弾道の偏向フラグ（2026-07-10ユーザー決定：狙った点にそのまま当たる直線弾道）
+## 両方 false ＝直線・等速。「照準の命中点」「実弾の着弾点」「予測（predict_*）」
+## 「リプレイの終点」が原理的に同一直線上に乗り、ズレが消える。
+## 弾速300m/sの飛行時間はそのまま＝動く標的へのリード（偏差撃ち）は生きる。
+## 将来リアル弾道（重力落下・風流され）を復活させる場合は true に戻すだけでよい。
+## 実弾(bullet.gd)・着弾予測・オートエイムの弾道解がすべて effective_accel() を
+## 参照するため、切り替えても三者の整合は保たれる。
+const GRAVITY_ENABLED := false
+const WIND_ENABLED := false
+
+
+## 弾に働く実効加速度（フラグに従う）。直線弾道時は Vector3.ZERO
+static func effective_accel(wind_accel: Vector3) -> Vector3:
+	var a := Vector3.ZERO
+	if GRAVITY_ENABLED:
+		a += GRAVITY
+	if WIND_ENABLED:
+		a += wind_accel
+	return a
+
 
 ## 1ステップ分のセミインプリシット・オイラー積分
 ## 戻り値: [次の位置, 次の速度]
 static func step(pos: Vector3, vel: Vector3, wind_accel: Vector3, delta: float) -> Array:
-	var new_vel := vel + (GRAVITY + wind_accel) * delta
+	var new_vel := vel + effective_accel(wind_accel) * delta
 	var new_pos := pos + new_vel * delta
 	return [new_pos, new_vel]
 

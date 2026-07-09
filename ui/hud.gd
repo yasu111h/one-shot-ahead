@@ -71,6 +71,8 @@ func _ready() -> void:
 	_mission_label.modulate = Color(1.0, 0.72, 0.45, 0.95)
 	_mission_label.visible = mission != ""
 	_wind_label = _make_center_label("WIND 0.0 m/s", 16, Control.PRESET_CENTER_TOP, Vector2(0, 8))
+	# 風が弾に影響しない設定（直線弾道）の間は風HUDを出さない
+	_wind_label.visible = Ballistics.WIND_ENABLED
 	_ammo_label = _make_label("AMMO 100/100", 16, Control.PRESET_TOP_RIGHT, Vector2(-140, 8))
 	_range_label = _make_center_label("--- m", 15, Control.PRESET_CENTER, Vector2(0, 46))
 	_zoom_label = _make_center_label("4x", 18, Control.PRESET_CENTER, Vector2(120, -140))
@@ -194,12 +196,13 @@ func _process(delta: float) -> void:
 	_zoom_label.text = ["1x", "4x", "8x"][rig.zoom_stage]
 	_ammo_label.text = "AMMO %d/%d" % [stage.ammo, stage.max_ammo]
 	_targets_label.text = "TARGETS %d/%d" % [stage.hits, stage.hostiles.size()]
-	# 風表示（矢印の向きと本数で強さを表現）
-	var w: float = stage.wind_speed
-	var arrows := ">".repeat(clampi(int(ceil(absf(w) / 1.5)), 1, 4)) if w >= 0.0 \
-		else "<".repeat(clampi(int(ceil(absf(w) / 1.5)), 1, 4))
-	_wind_label.text = "WIND %s %.1f m/s" % [arrows, absf(w)]
-	_wind_label.modulate = Color(1.0, 0.75, 0.4) if absf(w) > 3.5 else Color(0.92, 0.9, 0.85)
+	# 風表示（矢印の向きと本数で強さを表現）。風が弾に効く設定の時だけ
+	if _wind_label.visible:
+		var w: float = stage.wind_speed
+		var arrows := ">".repeat(clampi(int(ceil(absf(w) / 1.5)), 1, 4)) if w >= 0.0 \
+			else "<".repeat(clampi(int(ceil(absf(w) / 1.5)), 1, 4))
+		_wind_label.text = "WIND %s %.1f m/s" % [arrows, absf(w)]
+		_wind_label.modulate = Color(1.0, 0.75, 0.4) if absf(w) > 3.5 else Color(0.92, 0.9, 0.85)
 	# 測距
 	_range_label.text = ("%d m" % int(range_distance)) if range_distance > 0.0 else "--- m"
 	# 息止めゲージ
