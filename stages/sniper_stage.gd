@@ -20,7 +20,7 @@ const TERRAIN_MASK := 0b0001
 const KILLCAM_COOLDOWN := 3.0  # バレットカムの再発動までの最短間隔(秒)
 
 @export var muzzle_speed := 300.0  # 弾速 m/s（可変）
-@export var max_ammo := 5
+@export var max_ammo := 100
 
 # --- オートエイム(吸い付き)。スナイパー用に狭め。TABIJIの_assist_dir方式 ---
 @export var assist_deg_hip := 2.0      # 腰だめ時の吸い付き角(度)
@@ -297,6 +297,12 @@ func _do_fire() -> void:
 		_killcam_cd = KILLCAM_COOLDOWN
 		_start_replay(start, predicted, dir)
 		return
+	# ミス弾（何にも当たらない弾）も、設定ONならバレットカムで見送る
+	# （クールダウンは命中と共通。誤射＝民間人命中の予測弾は従来どおり実弾で見せる）
+	if predicted.is_empty() and Settings.miss_replay_enabled and _killcam_cd <= 0.0:
+		_killcam_cd = KILLCAM_COOLDOWN
+		_start_miss_replay(start, dir)
+		return
 	# 通常弾：実弾（重力・風の毎フレーム積分）を飛ばし、トレーサーを追従させる
 	var bullet := Bullet.new()
 	add_child(bullet)
@@ -344,6 +350,22 @@ func _start_replay(start: Vector3, predicted: Dictionary, dir: Vector3) -> void:
 	var to: Vector3 = point - tvel * (predicted.time - replay_world_dt)
 	bullet_cam.play(start, to, func() -> void:
 		_on_replay_impact(target, to, zone, dir))
+
+
+## ミス弾のバレットカム開始。地面への着弾予測点（最大射程まで何にも当たらなければ
+## 最大射程点）までスロー再生する。ダメージはなく、余韻突入時に「MISS」表示と、
+## 地面着弾なら土煙FX（着弾フレア＋火花）を出す。
+func _start_miss_replay(start: Vector3, dir: Vector3) -> void:
+	var impact := Ballistics.predict_miss_point(
+		get_world_3d().direct_space_state, start, dir * muzzle_speed, wind_accel)
+	var point: Vector3 = impact.point
+	var normal: Vector3 = impact.normal
+	var grounded: bool = impact.grounded
+	bullet_cam.play(start, point, func() -> void:
+		if grounded:
+			fx.impact_burst(point, normal)
+			_spawn_impact_dust(point)
+		hud.show_miss_stamp())
 
 
 ## リプレイの着弾の瞬間：ここで初めてダメージ・スタンプ・ヒットマーカー・命中音を出す

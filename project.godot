@@ -20,6 +20,7 @@ boot_splash/minimum_display_time=0
 [autoload]
 
 GameManager="*res://autoload/game_manager.gd"
+Settings="*res://autoload/settings.gd"
 
 [display]
 

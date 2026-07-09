@@ -72,3 +72,30 @@ static func predict_hit(
 			return {}
 		pos = next
 	return {}
+
+
+## ミス弾の着弾点予測（ミスリプレイのカメラ終点に使う）
+## 地形（レイヤ1）に当たればその着弾点と法線を {point, normal, grounded=true} で返す。
+## 最大射程まで何にも当たらなければ、その時点の弾の位置を grounded=false で返す。
+static func predict_miss_point(
+	space_state: PhysicsDirectSpaceState3D,
+	start: Vector3,
+	velocity: Vector3,
+	wind_accel: Vector3,
+	max_time := 4.0,
+	dt := 0.02
+) -> Dictionary:
+	var pos := start
+	var vel := velocity
+	var t := 0.0
+	while t < max_time:
+		var r := step(pos, vel, wind_accel, dt)
+		var next: Vector3 = r[0]
+		vel = r[1]
+		var query := PhysicsRayQueryParameters3D.create(pos, next, 1)
+		var hit := space_state.intersect_ray(query)
+		if hit:
+			return {"point": hit.position, "normal": hit.get("normal", Vector3.UP), "grounded": true}
+		pos = next
+		t += dt
+	return {"point": pos, "normal": Vector3.UP, "grounded": false}

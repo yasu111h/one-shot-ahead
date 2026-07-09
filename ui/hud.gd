@@ -3,6 +3,9 @@ extends CanvasLayer
 ## HUD：残弾・風・測距・息止め円弧ゲージ・操作ボタン・距離スタンプ・CLEAR/RETRY
 ## ＋動的レティクル（bloom開閉・ロック色変化・ヒットマーカー。TABIJIのcombat_hud.gd方式）
 
+const STAMP_HIT_COLOR := Color(0.95, 0.85, 0.5)   # 命中スタンプ（華やかな金色）
+const STAMP_MISS_COLOR := Color(0.6, 0.62, 0.65)  # MISSスタンプ（グレー系で差別化）
+
 var stage: SniperStage      # 親ステージ
 var mission := ""           # ミッション文（左上に常時表示。空なら出さない）
 var rig: SniperCamera
@@ -22,6 +25,7 @@ var _zoom_label: Label
 var _stamp: Label
 var _center_msg: Label
 var _retry_btn: Button
+var _miss_toggle: Button
 var _breath_arc: BreathArc
 var _fire_btn: TouchScreenButton
 var _scope_btn: TouchScreenButton
@@ -67,12 +71,12 @@ func _ready() -> void:
 	_mission_label.modulate = Color(1.0, 0.72, 0.45, 0.95)
 	_mission_label.visible = mission != ""
 	_wind_label = _make_center_label("WIND 0.0 m/s", 16, Control.PRESET_CENTER_TOP, Vector2(0, 8))
-	_ammo_label = _make_label("AMMO 5/5", 16, Control.PRESET_TOP_RIGHT, Vector2(-110, 8))
+	_ammo_label = _make_label("AMMO 100/100", 16, Control.PRESET_TOP_RIGHT, Vector2(-140, 8))
 	_range_label = _make_center_label("--- m", 15, Control.PRESET_CENTER, Vector2(0, 46))
 	_zoom_label = _make_center_label("4x", 18, Control.PRESET_CENTER, Vector2(120, -140))
 	_zoom_label.visible = false
 	_stamp = _make_center_label("", 44, Control.PRESET_CENTER, Vector2(0, 95))
-	_stamp.modulate = Color(0.95, 0.85, 0.5)
+	_stamp.modulate = STAMP_HIT_COLOR
 	_stamp.visible = false
 	_center_msg = _make_center_label("", 52, Control.PRESET_CENTER, Vector2(0, -70))
 	_center_msg.visible = false
@@ -86,6 +90,18 @@ func _ready() -> void:
 	_retry_btn.position += Vector2(0, 10)
 	_retry_btn.visible = false
 	_retry_btn.pressed.connect(func() -> void: stage.retry())
+	# ミスリプレイ設定トグル（右上・タップ/クリックで切替。値はSettingsが永続化）
+	_miss_toggle = Button.new()
+	_miss_toggle.custom_minimum_size = Vector2(150, 26)
+	_miss_toggle.add_theme_font_size_override("font_size", 11)
+	_miss_toggle.modulate = Color(1, 1, 1, 0.75)
+	add_child(_miss_toggle)
+	_miss_toggle.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT)
+	_miss_toggle.position += Vector2(-158, 34)
+	_miss_toggle.pressed.connect(func() -> void:
+		Settings.miss_replay_enabled = not Settings.miss_replay_enabled
+		_update_miss_toggle())
+	_update_miss_toggle()
 	# 操作ボタン（マルチタッチ対応のTouchScreenButton）
 	_fire_btn = _make_touch_button("FIRE", 52.0, Color(1.0, 0.55, 0.45, 0.9))
 	_fire_btn.pressed.connect(func() -> void: stage.request_fire())
@@ -174,6 +190,7 @@ func _process(delta: float) -> void:
 	_markers.visible = not replay
 	_reticle.scoped = scoped
 	_zoom_label.visible = scoped and not replay
+	_miss_toggle.visible = not replay
 	_zoom_label.text = ["1x", "4x", "8x"][rig.zoom_stage]
 	_ammo_label.text = "AMMO %d/%d" % [stage.ammo, stage.max_ammo]
 	_targets_label.text = "TARGETS %d/%d" % [stage.hits, stage.hostiles.size()]
@@ -223,12 +240,23 @@ func set_locked(locked: bool) -> void:
 
 
 ## 距離スタンプ表示（例:「342m HIT」「512m HEADSHOT」）
-func show_stamp(text: String) -> void:
+func show_stamp(text: String, color := STAMP_HIT_COLOR) -> void:
 	_stamp.text = text
 	_stamp.reset_size()
+	_stamp.modulate = color
 	_stamp.modulate.a = 1.0
 	_stamp.visible = true
 	_stamp_t = 0.0
+
+
+## ミスリプレイの余韻用「MISS」スタンプ（距離スタンプの代わり。グレー系で命中と差別化）
+func show_miss_stamp() -> void:
+	show_stamp("MISS", STAMP_MISS_COLOR)
+
+
+## ミスリプレイ設定トグルの表記を現在の設定値に合わせる
+func _update_miss_toggle() -> void:
+	_miss_toggle.text = "MISS REPLAY: %s" % ("ON" if Settings.miss_replay_enabled else "OFF")
 
 
 func show_clear() -> void:
