@@ -7,6 +7,8 @@ signal died(target: TargetVehicle)
 var alive := true
 var predict_radius := 1.8
 var velocity_estimate := Vector3.ZERO
+var head_offset := Vector3.ZERO  # 乗り物に頭部はない
+var head_radius := 0.0
 var speed := 10.0        # 走行速度 m/s
 var range_x := 60.0      # 往復範囲 ±range_x
 
@@ -20,7 +22,8 @@ func _ready() -> void:
 	collision_layer = 0b1000  # レイヤ4: 乗り物
 	collision_mask = 0b0001
 	set_meta("target_root", self)
-	set_meta("zone", "body")
+	set_meta("part", "body")
+	add_to_group("target_part")  # オートエイム対象（グループ＋meta "part" 契約）
 	# コリジョン（箱）
 	var col := CollisionShape3D.new()
 	var shape := BoxShape3D.new()

@@ -1,7 +1,7 @@
 class_name Ballistics
 extends RefCounted
 ## 弾道計算ユーティリティ（static関数群）
-## 弾丸本体と着弾予測（キルカム発動判定）で同じ積分式を使う
+## 弾丸本体と着弾予測（バレットカム発動判定）で同じ積分式を使う
 
 const GRAVITY := Vector3(0.0, -9.8, 0.0)
 
@@ -15,8 +15,10 @@ static func step(pos: Vector3, vel: Vector3, wind_accel: Vector3, delta: float) 
 
 
 ## 発射時の命中事前予測（粗いステップ積分）
-## targets: [{node, position, velocity, radius}] … 標的は等速直線移動と仮定
-## 命中が予測されれば {target, time, point}、外れなら {} を返す
+## targets: [{node, position, velocity, radius, head_offset, head_radius}]
+##          … 標的は等速直線移動と仮定。head_radius>0なら頭部を先に判定してゾーンを返す
+## 命中が予測されれば {target, time, point, zone}、外れなら {} を返す
+## point は弾道セグメント上の最接近点（=着弾点の近似。バレットカムの終点に使う）
 static func predict_hit(
 	space_state: PhysicsDirectSpaceState3D,
 	start: Vector3,
@@ -45,9 +47,16 @@ static func predict_hit(
 		# 各標的の予測位置と弾道セグメントの距離をチェック（地形より手前なら命中）
 		for tg in targets:
 			var predicted: Vector3 = tg.position + tg.velocity * t
+			# 頭部を先に判定（ヘッドショットのゾーン付き予測）
+			var head_r: float = tg.get("head_radius", 0.0)
+			if head_r > 0.0:
+				var head_pos: Vector3 = predicted + tg.get("head_offset", Vector3.ZERO)
+				var hclosest := Geometry3D.get_closest_point_to_segment(head_pos, pos, seg_end)
+				if head_pos.distance_to(hclosest) <= head_r:
+					return {"target": tg.node, "time": t, "point": hclosest, "zone": "head"}
 			var closest := Geometry3D.get_closest_point_to_segment(predicted, pos, seg_end)
 			if predicted.distance_to(closest) <= tg.radius:
-				return {"target": tg.node, "time": t, "point": predicted}
+				return {"target": tg.node, "time": t, "point": closest, "zone": "body"}
 		if blocked:
 			return {}
 		pos = next

@@ -8,6 +8,8 @@ signal died(target: TargetHuman)
 var alive := true
 var predict_radius := 0.8       # 着弾予測用の包含球半径
 var velocity_estimate := Vector3.ZERO  # 偏差予測用の推定速度
+var head_offset := Vector3(0, 0.93, 0)  # 中心→頭中心のオフセット（着弾予測のゾーン判定用）
+var head_radius := 0.2                  # 頭部ヒットボックス半径（同上）
 
 var _prev_pos := Vector3.ZERO
 var _body_mat: StandardMaterial3D
@@ -20,7 +22,8 @@ func _ready() -> void:
 	collision_layer = 0b0010  # レイヤ2: 敵ボディ
 	collision_mask = 0b0001   # 地形とだけ衝突（倒れる用）
 	set_meta("target_root", self)
-	set_meta("zone", "body")
+	set_meta("part", "body")
+	add_to_group("target_part")  # オートエイム対象（グループ＋meta "part" 契約）
 	_build_body()
 	_prev_pos = global_position
 
@@ -61,7 +64,8 @@ func _build_body() -> void:
 	head_area.monitoring = false
 	head_area.monitorable = true
 	head_area.set_meta("target_root", self)
-	head_area.set_meta("zone", "head")
+	head_area.set_meta("part", "head")
+	head_area.add_to_group("target_part")  # オートエイムはヘッドにも吸い付く
 	var head_col := CollisionShape3D.new()
 	var head_shape := SphereShape3D.new()
 	head_shape.radius = 0.2

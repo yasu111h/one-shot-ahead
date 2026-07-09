@@ -48,16 +48,10 @@ func _update_params() -> void:
 
 
 func _draw() -> void:
-	# レティクル（十字線＋ミルドット）
+	# ミルドットのみ描く（中央の十字は動的レティクル＝HUD側が担当する）
 	var c := size * 0.5
 	var col := Color(0.05, 0.05, 0.05, 0.85)
-	var gap := 10.0
 	var r := scope_radius
-	draw_line(c + Vector2(gap, 0), c + Vector2(r, 0), col, 1.5, true)
-	draw_line(c - Vector2(gap, 0), c - Vector2(r, 0), col, 1.5, true)
-	draw_line(c + Vector2(0, gap), c + Vector2(0, r), col, 1.5, true)
-	draw_line(c - Vector2(0, gap), c - Vector2(0, r), col, 1.5, true)
-	draw_circle(c, 1.6, col)
 	# ミルドット（重力落下・風の保持照準用）
 	for i in range(1, 7):
 		var d := i * 24.0

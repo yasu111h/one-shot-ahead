@@ -14,22 +14,7 @@ var wind_accel := Vector3.ZERO
 
 var _age := 0.0
 var _done := false
-
-
-func _ready() -> void:
-	# 見た目：小さな発光弾（キルカム用）
-	var mesh := MeshInstance3D.new()
-	var sphere := SphereMesh.new()
-	sphere.radius = 0.05
-	sphere.height = 0.1
-	var mat := StandardMaterial3D.new()
-	mat.albedo_color = Color(1.0, 0.9, 0.55)
-	mat.emission_enabled = true
-	mat.emission = Color(1.0, 0.8, 0.4)
-	mat.emission_energy_multiplier = 2.0
-	sphere.material = mat
-	mesh.mesh = sphere
-	add_child(mesh)
+# 見た目は持たない（トレーサー＝ShotFxが実弾位置に追従して光の筋を描く）
 
 
 func _physics_process(delta: float) -> void:
