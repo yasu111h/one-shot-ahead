@@ -2,9 +2,13 @@ class_name TargetHuman
 extends RigidBody3D
 ## 人型プレースホルダ標的（カプセル胴体＋球の頭）
 ## 通常は freeze=true の静的ボディ。命中時に物理へ切替えて倒れる
+##
+## hostile=false は民間人。撃つべきでない相手なので、オートエイムは吸い付かず、
+## バレットカムも発動しない。撃ってしまうとミッション失敗（SniperStage._fail）。
 
 signal died(target: TargetHuman)
 
+var hostile := true   # false＝民間人（誤射禁止）
 var alive := true
 var predict_radius := 0.8       # 着弾予測用の包含球半径
 var velocity_estimate := Vector3.ZERO  # 偏差予測用の推定速度
@@ -42,8 +46,9 @@ func _build_body() -> void:
 	body.radius = 0.3
 	body.height = 1.5
 	_body_mat = StandardMaterial3D.new()
-	# 濃い赤：緑の地面・灰色の空のどちらとも対比が強く、遠距離でも視認できる
-	_body_mat.albedo_color = Color(0.75, 0.10, 0.08)
+	# 悪人は濃い赤（緑の地面・灰色の空・暖色の室内のどれとも対比が強く遠距離でも読める）。
+	# 民間人は明るい私服。撃つ前の一瞬で見分けられる色差にする
+	_body_mat.albedo_color = Color(0.75, 0.10, 0.08) if hostile else Color(0.86, 0.86, 0.90)
 	body.material = _body_mat
 	body_mesh.mesh = body
 	add_child(body_mesh)
@@ -53,7 +58,8 @@ func _build_body() -> void:
 	head.radius = 0.16
 	head.height = 0.32
 	_head_mat = StandardMaterial3D.new()
-	_head_mat.albedo_color = Color(0.95, 0.32, 0.22)  # 頭はやや明るい赤（部位が読める）
+	# 頭は胴体よりやや明るく（部位が読める）
+	_head_mat.albedo_color = Color(0.95, 0.32, 0.22) if hostile else Color(0.95, 0.93, 0.90)
 	head.material = _head_mat
 	head_mesh.mesh = head
 	head_mesh.position = Vector3(0, 0.93, 0)
