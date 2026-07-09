@@ -2,9 +2,13 @@ class_name TargetHuman
 extends RigidBody3D
 ## 人型プレースホルダ標的（カプセル胴体＋球の頭）
 ## 通常は freeze=true の静的ボディ。命中時に物理へ切替えて倒れる
+##
+## hostile=false は民間人。撃つべきでない相手なので、オートエイムは吸い付かず、
+## バレットカムも発動しない。撃ってしまうとミッション失敗（SniperStage._fail）。
 
 signal died(target: TargetHuman)
 
+var hostile := true   # false＝民間人（誤射禁止）
 var alive := true
 var predict_radius := 0.8       # 着弾予測用の包含球半径
 var velocity_estimate := Vector3.ZERO  # 偏差予測用の推定速度
@@ -42,7 +46,8 @@ func _build_body() -> void:
 	body.radius = 0.3
 	body.height = 1.5
 	_body_mat = StandardMaterial3D.new()
-	_body_mat.albedo_color = Color(0.42, 0.47, 0.38)  # オリーブ色の人型
+	# 悪人はオリーブの戦闘服、民間人は明るい私服（一瞬で見分けられる色差）
+	_body_mat.albedo_color = Color(0.42, 0.47, 0.38) if hostile else Color(0.86, 0.86, 0.90)
 	body.material = _body_mat
 	body_mesh.mesh = body
 	add_child(body_mesh)

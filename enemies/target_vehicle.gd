@@ -4,6 +4,7 @@ extends RigidBody3D
 
 signal died(target: TargetVehicle)
 
+var hostile := true   # 乗り物は常に撃つべき標的（TargetHumanと同じ契約）
 var alive := true
 var predict_radius := 1.8
 var velocity_estimate := Vector3.ZERO

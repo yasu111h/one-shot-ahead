@@ -45,18 +45,29 @@ static func predict_hit(
 			blocked = true
 		t += dt
 		# 各標的の予測位置と弾道セグメントの距離をチェック（地形より手前なら命中）
+		# 1ステップ内に複数の標的が重なりうる（部屋の中で悪人の手前に民間人が立つ等）ので、
+		# 弾の進行方向で最も手前の1体を選ぶ。配列順で決めると奥の標的に当たってしまう。
+		var best := {}
+		var best_d := INF
 		for tg in targets:
 			var predicted: Vector3 = tg.position + tg.velocity * t
-			# 頭部を先に判定（ヘッドショットのゾーン付き予測）
 			var head_r: float = tg.get("head_radius", 0.0)
 			if head_r > 0.0:
 				var head_pos: Vector3 = predicted + tg.get("head_offset", Vector3.ZERO)
 				var hclosest := Geometry3D.get_closest_point_to_segment(head_pos, pos, seg_end)
 				if head_pos.distance_to(hclosest) <= head_r:
-					return {"target": tg.node, "time": t, "point": hclosest, "zone": "head"}
+					var hd := pos.distance_to(hclosest)
+					if hd < best_d:
+						best_d = hd
+						best = {"target": tg.node, "time": t, "point": hclosest, "zone": "head"}
 			var closest := Geometry3D.get_closest_point_to_segment(predicted, pos, seg_end)
 			if predicted.distance_to(closest) <= tg.radius:
-				return {"target": tg.node, "time": t, "point": closest, "zone": "body"}
+				var bd := pos.distance_to(closest)
+				if bd < best_d:
+					best_d = bd
+					best = {"target": tg.node, "time": t, "point": closest, "zone": "body"}
+		if not best.is_empty():
+			return best
 		if blocked:
 			return {}
 		pos = next

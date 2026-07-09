@@ -3,9 +3,8 @@ extends CanvasLayer
 ## HUD：残弾・風・測距・息止め円弧ゲージ・操作ボタン・距離スタンプ・CLEAR/RETRY
 ## ＋動的レティクル（bloom開閉・ロック色変化・ヒットマーカー。TABIJIのcombat_hud.gd方式）
 
-const AMMO_MAX := 5
-
-var stage: Node3D           # test_range（親ステージ）
+var stage: SniperStage      # 親ステージ
+var mission := ""           # ミッション文（左上に常時表示。空なら出さない）
 var rig: SniperCamera
 var range_distance := -1.0  # ステージが毎フレーム更新する測距値
 
@@ -16,6 +15,7 @@ var _ammo_label: Label
 var _wind_label: Label
 var _targets_label: Label
 var _hint_label: Label
+var _mission_label: Label
 var _range_label: Label
 var _zoom_label: Label
 var _stamp: Label
@@ -51,6 +51,9 @@ func _ready() -> void:
 		"AIM: R-DRAG / FIRE: L-CLICK / SCOPE: Q or WHEEL / BREATH: HOLD SPACE (SCOPED)",
 		10, Control.PRESET_TOP_LEFT, Vector2(12, 30))
 	_hint_label.modulate = Color(1, 1, 1, 0.55)
+	_mission_label = _make_label(mission, 13, Control.PRESET_TOP_LEFT, Vector2(12, 48))
+	_mission_label.modulate = Color(1.0, 0.72, 0.45, 0.95)
+	_mission_label.visible = mission != ""
 	_wind_label = _make_center_label("WIND 0.0 m/s", 16, Control.PRESET_CENTER_TOP, Vector2(0, 8))
 	_ammo_label = _make_label("AMMO 5/5", 16, Control.PRESET_TOP_RIGHT, Vector2(-110, 8))
 	_range_label = _make_center_label("--- m", 15, Control.PRESET_CENTER, Vector2(0, 46))
@@ -159,8 +162,8 @@ func _process(delta: float) -> void:
 	_reticle.scoped = scoped
 	_zoom_label.visible = scoped and not replay
 	_zoom_label.text = ["1x", "4x", "8x"][rig.zoom_stage]
-	_ammo_label.text = "AMMO %d/%d" % [stage.ammo, AMMO_MAX]
-	_targets_label.text = "TARGETS %d/%d" % [stage.hits, stage.targets.size()]
+	_ammo_label.text = "AMMO %d/%d" % [stage.ammo, stage.max_ammo]
+	_targets_label.text = "TARGETS %d/%d" % [stage.hits, stage.hostiles.size()]
 	# 風表示（矢印の向きと本数で強さを表現）
 	var w: float = stage.wind_speed
 	var arrows := ">".repeat(clampi(int(ceil(absf(w) / 1.5)), 1, 4)) if w >= 0.0 \
@@ -222,8 +225,9 @@ func show_clear() -> void:
 	_retry_btn.visible = true
 
 
-func show_retry() -> void:
-	_center_msg.text = "AMMO OUT"
+## ミッション失敗（弾切れ・民間人の誤射など）
+func show_fail(msg: String) -> void:
+	_center_msg.text = msg
 	_center_msg.modulate = Color(0.95, 0.45, 0.4)
 	_center_msg.visible = true
 	_retry_btn.visible = true
