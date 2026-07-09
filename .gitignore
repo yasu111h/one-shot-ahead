@@ -1,0 +1,11 @@
+# Godot
+.godot/
+*.tmp
+export_presets.cfg.bak
+
+# macOS
+.DS_Store
+
+# メモ類（リポジトリ外が原則だが保険）
+notes.md
+改善点.md
