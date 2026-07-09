@@ -25,7 +25,9 @@ var _mat: ShaderMaterial
 
 
 func _ready() -> void:
-	set_anchors_preset(Control.PRESET_FULL_RECT)
+	# ※ set_anchors_preset だと生成直後のサイズ(0,0)が保持されて0サイズのままになる。
+	#   オフセットごとFULL_RECTにする（レティクル左上バグと同根）
+	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_mask = ColorRect.new()
 	_mask.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -35,7 +37,7 @@ func _ready() -> void:
 	_mat.shader = shader
 	_mask.material = _mat
 	add_child(_mask)
-	_mask.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_mask.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	resized.connect(_update_params)
 	_update_params()
 

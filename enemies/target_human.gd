@@ -42,7 +42,8 @@ func _build_body() -> void:
 	body.radius = 0.3
 	body.height = 1.5
 	_body_mat = StandardMaterial3D.new()
-	_body_mat.albedo_color = Color(0.42, 0.47, 0.38)  # オリーブ色の人型
+	# 濃い赤：緑の地面・灰色の空のどちらとも対比が強く、遠距離でも視認できる
+	_body_mat.albedo_color = Color(0.75, 0.10, 0.08)
 	body.material = _body_mat
 	body_mesh.mesh = body
 	add_child(body_mesh)
@@ -52,7 +53,7 @@ func _build_body() -> void:
 	head.radius = 0.16
 	head.height = 0.32
 	_head_mat = StandardMaterial3D.new()
-	_head_mat.albedo_color = Color(0.8, 0.68, 0.56)
+	_head_mat.albedo_color = Color(0.95, 0.32, 0.22)  # 頭はやや明るい赤（部位が読める）
 	head.material = _head_mat
 	head_mesh.mesh = head
 	head_mesh.position = Vector3(0, 0.93, 0)

@@ -60,6 +60,16 @@ func add_aim_delta(rel: Vector2) -> void:
 	_pitch_node.rotation.x = _pitch
 
 
+## 指定ワールド座標がほぼ画面中央に来る向きへ即座に合わせる（起動時の初期照準など）
+func aim_at(point: Vector3) -> void:
+	var to := point - global_position
+	var horiz := Vector2(to.x, to.z).length()
+	_yaw = clampf(atan2(-to.x, -to.z), deg_to_rad(-80.0), deg_to_rad(80.0))
+	_pitch = clampf(atan2(to.y, horiz), deg_to_rad(-25.0), deg_to_rad(25.0))
+	rotation.y = _yaw
+	_pitch_node.rotation.x = _pitch
+
+
 ## スコープボタン/Qキー：肉眼→4x→8x→肉眼 の巡回（スコープ中の再タップで段階切替）
 func cycle_zoom() -> void:
 	set_zoom_stage((zoom_stage + 1) % 3)

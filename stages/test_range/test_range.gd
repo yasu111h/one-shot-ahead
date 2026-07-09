@@ -149,10 +149,10 @@ func _setup_wind() -> void:
 
 
 func _spawn_targets() -> void:
-	# 静止標的（150m）
+	# 静止標的（80m・最初に狙う練習用に近め）
 	var still := TargetHuman.new()
 	add_child(still)
-	still.global_position = Vector3(6, 0.76, -150)
+	still.global_position = Vector3(6, 0.76, -80)
 	targets.append(still)
 	# 歩行標的（300m / 450m・Path3D追従）
 	_add_walker(-300.0, 15.0, 1.5)
@@ -188,9 +188,26 @@ func _build_cameras() -> void:
 	rig = SniperCamera.new()
 	add_child(rig)
 	rig.position = Vector3(0, 6.3, 1.5)  # やぐらの上
+	# 起動時は最も近い標的がほぼ画面中央に見える向きにする
+	var nearest := _nearest_target()
+	if nearest != null:
+		rig.aim_at(nearest.global_position)
 	bullet_cam = BulletCam.new()
 	add_child(bullet_cam)
 	bullet_cam.finished.connect(_check_end)
+
+
+func _nearest_target() -> Node3D:
+	var best: Node3D = null
+	var best_d := INF
+	for t in targets:
+		if not (t is Node3D) or not is_instance_valid(t) or not t.is_inside_tree():
+			continue
+		var d: float = rig.global_position.distance_to(t.global_position)
+		if d < best_d:
+			best_d = d
+			best = t
+	return best
 
 
 func _build_fx() -> void:
@@ -228,12 +245,12 @@ func _unhandled_input(event: InputEvent) -> void:
 		if event.index == _cam_touch_index and not is_replay_active():
 			rig.add_aim_delta(event.relative)
 		return
-	# マウス（Mac用。タッチ端末ではエミュレートマウスを無視）
-	if _is_touch:
-		if event is InputEventKey:
-			pass  # 外付けキーボードは許可
-		else:
-			return
+	# マウス（Mac用）。タッチ端末で実タッチから合成されるエミュレートマウスだけを
+	# 無視し、実マウスは端末判定に関わらず常に受け付ける
+	# （※旧実装の「タッチ端末なら全マウス無視」は、端末誤判定時にMacの
+	#   クリック・右ドラッグが全滅するため device 判定に変更）
+	if event.device == InputEvent.DEVICE_ID_EMULATION and not (event is InputEventKey):
+		return
 	if event is InputEventMouseMotion:
 		# 右ドラッグ＝視点回転（押している間だけ・キャプチャなし）
 		if Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT) and not is_replay_active():

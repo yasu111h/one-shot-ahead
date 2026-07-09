@@ -12,6 +12,7 @@ var range_distance := -1.0  # ステージが毎フレーム更新する測距�
 var scope: ScopeOverlay
 
 var _reticle: DynamicReticle
+var _markers: TargetMarkers
 var _ammo_label: Label
 var _wind_label: Label
 var _targets_label: Label
@@ -34,17 +35,28 @@ func _ready() -> void:
 	scope = ScopeOverlay.new()
 	add_child(scope)
 	scope.visible = false
+	# 標的マーカー（▼＋距離。スコープマスクより奥＝円の外はマスクで隠れる）
+	_markers = TargetMarkers.new()
+	_markers.stage = stage
+	_markers.rig = rig
+	_markers.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(_markers)
+	move_child(_markers, 0)
+	_markers.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	# 息止め円弧ゲージ
+	# ※ set_anchors_preset は「現在のレクトを保持したままアンカーだけ変える」ため、
+	#   生成直後のサイズ(0,0)のControlに使うと0サイズのまま＝中心(size/2)が左上になる。
+	#   必ず set_anchors_and_offsets_preset でオフセットごとFULL_RECTにする。
 	_breath_arc = BreathArc.new()
 	_breath_arc.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(_breath_arc)
-	_breath_arc.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_breath_arc.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_breath_arc.visible = false
 	# 動的レティクル（スコープマスクより手前）
 	_reticle = DynamicReticle.new()
 	_reticle.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(_reticle)
-	_reticle.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_reticle.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	# ラベル類
 	_targets_label = _make_label("TARGETS 0/0", 15, Control.PRESET_TOP_LEFT, Vector2(12, 8))
 	_hint_label = _make_label(
@@ -156,6 +168,7 @@ func _process(delta: float) -> void:
 	# リプレイ中はシネマ映像の邪魔になる照準UIを消す
 	scope.visible = scoped and not replay
 	_reticle.visible = not replay
+	_markers.visible = not replay
 	_reticle.scoped = scoped
 	_zoom_label.visible = scoped and not replay
 	_zoom_label.text = ["1x", "4x", "8x"][rig.zoom_stage]
@@ -263,6 +276,53 @@ class DynamicReticle:
 			var a := hitmark_t / HITMARK_TIME
 			var hcol := Color(1.0, 0.62, 0.2, a) if hitmark_head else Color(1.0, 1.0, 1.0, a)
 			Reticle.draw_hitmark(self, c, hcol)
+
+
+## 標的マーカー：生存標的の頭上に▼＋距離ラベルを常時表示する2Dオーバーレイ。
+## 「標的がどこにいるか」を一目で分かるようにする（背景に沈まないよう縁取り付き）
+class TargetMarkers:
+	extends Control
+
+	const COL := Color(1.0, 0.30, 0.22, 0.95)
+	const COL_OUTLINE := Color(0.0, 0.0, 0.0, 0.8)
+	const FONT_SIZE := 13
+	const MARKER_HEIGHT := 2.2   # 標的原点からマーカーまでの高さ(m)
+
+	var stage: Node3D
+	var rig: SniperCamera
+
+	func _process(_delta: float) -> void:
+		queue_redraw()
+
+	func _draw() -> void:
+		if stage == null or rig == null or rig.camera == null:
+			return
+		var cam: Camera3D = rig.camera
+		var font := ThemeDB.fallback_font
+		for t in stage.targets:
+			if not is_instance_valid(t) or not t.alive or not t.is_inside_tree():
+				continue
+			var wp: Vector3 = t.global_position + Vector3(0, MARKER_HEIGHT, 0)
+			if cam.is_position_behind(wp):
+				continue
+			var sp := cam.unproject_position(wp)
+			# ▼（下向き三角。縁取り→本体の順で背景に負けないように）
+			var tri := PackedVector2Array([
+				sp + Vector2(-8, -14), sp + Vector2(8, -14), sp + Vector2(0, -2)])
+			var tri_o := PackedVector2Array([
+				sp + Vector2(-10, -16), sp + Vector2(10, -16), sp + Vector2(0, 1)])
+			draw_colored_polygon(tri_o, COL_OUTLINE)
+			draw_colored_polygon(tri, COL)
+			# 距離ラベル（▼の上・中央寄せ）
+			var dist := int(round(cam.global_position.distance_to(t.global_position)))
+			var text := "%dm" % dist
+			var ts := font.get_string_size(
+				text, HORIZONTAL_ALIGNMENT_CENTER, -1, FONT_SIZE)
+			var tp := sp + Vector2(-ts.x * 0.5, -20)
+			draw_string_outline(font, tp, text,
+				HORIZONTAL_ALIGNMENT_LEFT, -1, FONT_SIZE, 4, COL_OUTLINE)
+			draw_string(font, tp, text,
+				HORIZONTAL_ALIGNMENT_LEFT, -1, FONT_SIZE, COL)
 
 
 ## 息止め円弧ゲージ（スコープ円の左弧に沿って描画）
