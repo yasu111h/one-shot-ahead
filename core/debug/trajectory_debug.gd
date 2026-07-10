@@ -21,6 +21,8 @@ const COL_REAL := Color(1.0, 0.25, 0.2)     # 赤：実弾（ゴースト含む�
 const COL_REPLAY := Color(1.0, 0.9, 0.2)    # 黄：リプレイ弾
 const RAY_MASK := 0b1111                    # 地形1+ボディ2+ヘッド4+乗り物8
 const VIEW_NAMES := ["normal", "side", "impact"]
+const DASH_LEN := 2.0                       # 破線のダッシュ長(m)。赤と黄は位相をずらして交互に見せる
+const MATCH_TOL := 0.1                      # 「一致」と判定する許容誤差(m)
 
 var stage  # SniperStage（型を書くと相互参照になるため未型付け）
 var enabled := false
@@ -110,7 +112,7 @@ func on_fire(eye: Vector3, raw_dir: Vector3, assisted: bool) -> void:
 	query.collide_with_areas = true
 	var res := get_world_3d().direct_space_state.intersect_ray(query)
 	_aim_point = res.position if res else eye + raw_dir * 1500.0
-	_add_marker(_aim_point, "AIM", COL_AIM)
+	_add_marker(_aim_point, "AIM", COL_AIM, 0.6)
 	if _view != 0:
 		_set_view(0)  # 新しい1発は通常視点から（前の弾の視点位置が残らないように）
 
@@ -125,7 +127,7 @@ func track_bullet(b: Bullet) -> void:
 		_real_impact = result.position
 		_real_pts.append(result.position)
 		_has_real_impact = true
-		_add_marker(result.position, "REAL", COL_REAL))
+		_add_marker(result.position, "REAL", COL_REAL, 1.2))
 
 
 ## リプレイ（バレットカム）開始：確定弾道の始点・終点を記録して黄マーカーを置く
@@ -136,7 +138,7 @@ func on_replay(from: Vector3, to: Vector3) -> void:
 	_replay_from = from
 	_replay_to = to
 	_replay_pts.append(from)
-	_add_marker(to, "REPLAY", COL_REPLAY)
+	_add_marker(to, "REPLAY", COL_REPLAY, 1.8)
 
 
 # ---------------------------------------------------------------- 毎フレーム処理
@@ -169,22 +171,43 @@ func _rebuild_lines() -> void:
 	if not _has_shot:
 		return
 	_mesh.surface_begin(Mesh.PRIMITIVE_LINES)
-	# 緑：狙点レイ
+	# 緑：狙点レイ（実線）
 	_mesh.surface_set_color(COL_AIM)
 	_mesh.surface_add_vertex(_aim_start)
 	_mesh.surface_add_vertex(_aim_point)
-	# 赤：実弾の軌跡
-	_add_polyline(_real_pts, COL_REAL)
-	# 黄：リプレイ弾の軌跡
-	_add_polyline(_replay_pts, COL_REPLAY)
+	# 赤：実弾の軌跡（破線・位相0）／黄：リプレイ弾の軌跡（破線・位相ずらし）。
+	# 3本が完全に重なっている場合でも「緑の実線の上に赤・黄のダッシュが交互に乗る」
+	# ので、1本にしか見えず区別できない問題を解消する（重なり＝一致の証拠が見える）
+	_add_dashed(_real_pts, COL_REAL, 0.0)
+	_add_dashed(_replay_pts, COL_REPLAY, DASH_LEN)
 	_mesh.surface_end()
 
 
-func _add_polyline(pts: PackedVector3Array, col: Color) -> void:
+## 破線ポリライン。DASH_LEN描いてDASH_LEN休むを繰り返す。phase＝パターンの開始オフセット(m)
+func _add_dashed(pts: PackedVector3Array, col: Color, phase: float) -> void:
 	_mesh.surface_set_color(col)
+	var period := DASH_LEN * 2.0
+	var pos_along := phase
 	for i in range(pts.size() - 1):
-		_mesh.surface_add_vertex(pts[i])
-		_mesh.surface_add_vertex(pts[i + 1])
+		var a := pts[i]
+		var b := pts[i + 1]
+		var seg_len := a.distance_to(b)
+		if seg_len < 0.0001:
+			continue
+		var dirv := (b - a) / seg_len
+		var t := 0.0
+		while t < seg_len:
+			var local := fmod(pos_along, period)
+			if local < DASH_LEN:
+				var run := minf(DASH_LEN - local, seg_len - t)
+				_mesh.surface_add_vertex(a + dirv * t)
+				_mesh.surface_add_vertex(a + dirv * (t + run))
+				t += run
+				pos_along += run
+			else:
+				var skip := minf(period - local, seg_len - t)
+				t += skip
+				pos_along += skip
 
 
 # ---------------------------------------------------------------- 数値パネル
@@ -198,22 +221,35 @@ func _update_panel() -> void:
 		return
 	lines.append("ASSIST: %s" % ("ON(auto-aim bent)" if _assisted else "OFF(raw aim)"))
 	lines.append("AIM    d=%.1fm  %s" % [_aim_start.distance_to(_aim_point), _fmt(_aim_point)])
+	var drop := 0.0
 	if _has_real_impact:
 		var off := _ray_offset(_real_impact)
 		var side := Vector2(off.x, off.z).length()
-		lines.append("REAL   DROP:%+.2fm SIDE:%.2fm  %s" % [-off.y, side, _fmt(_real_impact)])
+		drop = -off.y
+		lines.append("REAL   DROP:%+.2fm SIDE:%.2fm  %s" % [drop, side, _fmt(_real_impact)])
 	elif _bullet != null and is_instance_valid(_bullet):
 		lines.append("REAL   flying... (%d pts)" % _real_pts.size())
 	else:
 		lines.append("REAL   -")
+	var gap := -1.0
+	var dev := -1.0
 	if _has_replay:
-		var gap := _real_impact.distance_to(_replay_to) if _has_real_impact else -1.0
+		gap = _real_impact.distance_to(_replay_to) if _has_real_impact else -1.0
 		var gap_s := ("%.2fm" % gap) if gap >= 0.0 else "-"
 		lines.append("REPLAY end %s  GAP(real-replay):%s" % [_fmt(_replay_to), gap_s])
-		var dev := _max_dev()
+		dev = _max_dev()
 		lines.append("PATH DEV(real vs replay) max:%s" % (("%.2fm" % dev) if dev >= 0.0 else "-"))
 	else:
 		lines.append("REPLAY -")
+	# 結論の1行：数値を読まなくても分かる判定。緑線・赤線・黄線が重なって
+	# 1本に見える時は、これがMATCHなら「一致している証拠」
+	if _has_real_impact and _has_replay and gap >= 0.0 and dev >= 0.0:
+		var ok := absf(drop) < MATCH_TOL and gap < MATCH_TOL and dev < MATCH_TOL
+		lines.insert(1, "RESULT: %s" % (
+			"MATCH - aim/real/replay match (lines overlap)" if ok
+			else "MISMATCH!! check DROP/GAP/DEV below"))
+		_label.add_theme_color_override(
+			"font_color", Color(0.7, 1.0, 0.75) if ok else Color(1.0, 0.45, 0.4))
 	_label.text = "\n".join(lines)
 
 
@@ -281,7 +317,9 @@ func _end_point() -> Vector3:
 
 # ---------------------------------------------------------------- マーカー・クリア
 
-func _add_marker(pos: Vector3, text: String, col: Color) -> void:
+## マーカー（球＋名前ラベル）。label_h＝ラベルの高さ(m)。
+## AIM/REAL/REPLAYで高さを変え、3点が同じ場所でもラベルが縦に並んで読めるようにする
+func _add_marker(pos: Vector3, text: String, col: Color, label_h := 0.9) -> void:
 	var m := MeshInstance3D.new()
 	var sphere := SphereMesh.new()
 	sphere.radius = 0.3
@@ -299,12 +337,13 @@ func _add_marker(pos: Vector3, text: String, col: Color) -> void:
 	var l := Label3D.new()
 	l.text = text
 	l.modulate = col
-	l.font_size = 22
-	l.outline_size = 8
+	l.font_size = 14
+	l.outline_size = 5
+	l.pixel_size = 0.002         # fixed_sizeでの画面上の大きさ（既定0.005は巨大すぎた）
 	l.fixed_size = true          # 距離によらず画面上で同じ大きさ（200m先でも読める）
 	l.no_depth_test = true
 	l.billboard = BaseMaterial3D.BILLBOARD_ENABLED
-	l.position = Vector3(0, 0.9, 0)
+	l.position = Vector3(0, label_h, 0)
 	m.add_child(l)
 	_markers.append(m)
 
