@@ -247,6 +247,9 @@ func _unhandled_input(event: InputEvent) -> void:
 			KEY_TAB:
 				if event.pressed and OS.is_debug_build:
 					debug.cycle_view()  # Tab＝デバッグ視点切替（通常→真横→着弾点）
+			KEY_ESCAPE:
+				if event.pressed:
+					GameManager.goto_select()  # ステージ選択へ戻る
 
 
 # ---------------------------------------------------------------- 射撃
