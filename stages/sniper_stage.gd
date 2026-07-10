@@ -6,13 +6,14 @@ extends Node3D
 ##   _build_world()       … 地形/建物
 ##   _spawn_targets()     … 標的の配置（_register / _add_walker を使う）
 ##   _rig_position()      … 狙撃地点
-##   _setup_wind()        … 風（既定はランダム横風）
+##   _setup_wind()        … 風（既定はランダム横風。Ballistics.WIND_ENABLED=false の間は
+##                            弾に影響せずHUDにも出ない。風を復活させたら自動で有効化）
 ##
 ## 操作（TABIJIの操作感・マウスキャプチャなし）:
 ##   視点   … 右ドラッグ（PC）/ 画面右側ドラッグ（タッチ・1本指追跡）
 ##   発射   … 左クリック / FIREボタン（Fキーは予備）
 ##   スコープ … Qキー / SCOPEボタンでトグル巡回（1x→4x→8x→1x）。ホイールで段階±1
-##   息止め … スペース長押し / BREATHボタン（スコープ中のみ）
+## ※ 息止めは廃止（照準は常に静止・2026-07-10ユーザー決定）
 
 const WIND_FACTOR := 0.6  # 風速(m/s)→弾への加速度(m/s^2)係数
 const RANGE_MASK := 0b1111
@@ -20,7 +21,7 @@ const TERRAIN_MASK := 0b0001
 const KILLCAM_COOLDOWN := 3.0  # バレットカムの再発動までの最短間隔(秒)
 
 @export var muzzle_speed := 300.0  # 弾速 m/s（可変）
-@export var max_ammo := 5
+@export var max_ammo := 100
 
 # --- オートエイム(吸い付き)。スナイパー用に狭め。TABIJIの_assist_dir方式 ---
 @export var assist_deg_hip := 2.0      # 腰だめ時の吸い付き角(度)
@@ -228,11 +229,6 @@ func _unhandled_input(event: InputEvent) -> void:
 			KEY_Q:
 				if event.pressed:
 					rig.cycle_zoom()  # Q＝スコープトグル（1x→4x→8x→1x）
-			KEY_SPACE:
-				if event.pressed:
-					rig.start_breath()  # スペース長押し＝息止め（スコープ中のみ）
-				else:
-					rig.stop_breath()
 			KEY_F:
 				if event.pressed:
 					request_fire()  # 予備の発射キー
@@ -303,7 +299,14 @@ func _do_fire() -> void:
 		_killcam_cd = KILLCAM_COOLDOWN
 		_start_replay(start, predicted, dir)
 		return
-	# 通常弾：実弾（重力・風の毎フレーム積分）を飛ばし、トレーサーを追従させる
+	# ミス弾（何にも当たらない弾）も、設定ONならバレットカムで見送る
+	# （クールダウンは命中と共通。誤射＝民間人命中の予測弾は従来どおり実弾で見せる）
+	if predicted.is_empty() and Settings.miss_replay_enabled and _killcam_cd <= 0.0:
+		_killcam_cd = KILLCAM_COOLDOWN
+		_start_miss_replay(start, dir)
+		return
+	# 通常弾：実弾（Ballisticsの毎フレーム積分。既定は直線・等速）を飛ばし、
+	# トレーサーを追従させる
 	var bullet := Bullet.new()
 	add_child(bullet)
 	bullet.global_position = start
@@ -352,6 +355,22 @@ func _start_replay(start: Vector3, predicted: Dictionary, dir: Vector3) -> void:
 		_on_replay_impact(target, to, zone, dir))
 
 
+## ミス弾のバレットカム開始。地面への着弾予測点（最大射程まで何にも当たらなければ
+## 最大射程点）までスロー再生する。ダメージはなく、余韻突入時に「MISS」表示と、
+## 地面着弾なら土煙FX（着弾フレア＋火花）を出す。
+func _start_miss_replay(start: Vector3, dir: Vector3) -> void:
+	var impact := Ballistics.predict_miss_point(
+		get_world_3d().direct_space_state, start, dir * muzzle_speed, wind_accel)
+	var point: Vector3 = impact.point
+	var normal: Vector3 = impact.normal
+	var grounded: bool = impact.grounded
+	bullet_cam.play(start, point, func() -> void:
+		if grounded:
+			fx.impact_burst(point, normal)
+			_spawn_impact_dust(point)
+		hud.show_miss_stamp())
+
+
 ## リプレイの着弾の瞬間：ここで初めてダメージ・スタンプ・ヒットマーカー・命中音を出す
 ## （倒れる様子はバレットカムの余韻＝HOLD_SLOWMO 0.7秒の中で見える）
 func _on_replay_impact(target: Node, point: Vector3, zone: String, dir: Vector3) -> void:
@@ -384,11 +403,11 @@ func _update_rangefinder() -> void:
 # ---------------------------------------------------------------- オートエイム(TABIJI移植)
 
 ## オートエイム: 狙い(base)の近くにいる標的部位("target_part"グループ)を探し、
-## 吸い付き角の内なら「その部位に実際に命中する発射方向（重力・風の弾道解）」を返す。
+## 吸い付き角の内なら「その部位に実際に命中する発射方向（弾道解）」を返す。
 ## いなければ Vector3.ZERO。部位がカプセルなら中心でなく「芯線上で狙いに最も近い点」へ。
-## ※ TABIJIはヒットスキャンなので部位への直線方向でよいが、本作は実弾道（重力落下・
-##    風流され）のため、直線に吸い付くと必ず下に外れる。吸い付き先を弾道補正済みの
-##    照準解にすることで「ロック＝当たる」が成立する。
+## ※ 弾道解は Ballistics のフラグに従う。現行の直線弾道では部位への直線方向そのもの。
+##    重力・風（GRAVITY_ENABLED / WIND_ENABLED）を復活させた場合は、飛翔時間ぶんの
+##    ドロップを見込んだ照準解に自動で切り替わり「ロック＝当たる」が維持される。
 ## ※ 民間人と、壁の陰にいる標的には吸い付かない（ロック＝当たる、を壊さないため）。
 func _assist_dir(base: Vector3) -> Vector3:
 	var deg := lerpf(assist_deg_hip, assist_deg_scope, rig.aim_blend)
@@ -411,9 +430,10 @@ func _assist_dir(base: Vector3) -> Vector3:
 		if range_k <= 0.0:
 			continue
 		var eff_ang := deg_to_rad(deg) * range_k
-		# 弾道補正：飛翔時間ぶんの重力・風ドロップを見込んだ照準点（上・風上へずらす）
+		# 弾道補正：飛翔時間ぶんのドロップを見込んだ照準点。
+		# Ballistics のフラグに従う（直線弾道＝実効加速度ゼロなら補正なし＝部位そのもの）
 		var tf := d / muzzle_speed
-		var solution := point - (Ballistics.GRAVITY + wind_accel) * (0.5 * tf * tf)
+		var solution := point - Ballistics.effective_accel(wind_accel) * (0.5 * tf * tf)
 		var to := solution - eye
 		var ang := base.angle_to(to.normalized())
 		if ang >= eff_ang or ang >= best_ang:
