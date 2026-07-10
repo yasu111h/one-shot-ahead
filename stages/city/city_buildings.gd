@@ -287,7 +287,8 @@ func _build_towers() -> void:
 		var dpt := rng.randf_range(12.0, 30.0)
 		var h := rng.randf_range(16.0, 80.0)
 		var mat := _win_mat(float(placed) * 7.3, rng.randf_range(0.18, 0.42), rng.randf_range(0.1, 0.35))
-		_box(Vector3(w, h, dpt), Vector3(x, h * 0.5, z), mat, false)
+		# 当たり判定あり：弾・リプレイが最初に当たったビルで必ず止まる（貫通防止）
+		_box(Vector3(w, h, dpt), Vector3(x, h * 0.5, z), mat, true)
 		if h > 60.0:
 			tallest.append([h, x, z])
 		placed += 1
@@ -301,7 +302,8 @@ func _build_towers() -> void:
 		var bw := rng.randf_range(34.0, 60.0)
 		var bh := rng.randf_range(10.0, 30.0)
 		var m := _win_mat(100.0 + float(i) * 3.7, 0.24, 0.25)
-		_box(Vector3(bw, bh, rng.randf_range(20.0, 34.0)), Vector3(bx, bh * 0.5, bz), m, false)
+		# こちらも当たり判定あり（遠景でも撃てば手前の壁で止まる）
+		_box(Vector3(bw, bh, rng.randf_range(20.0, 34.0)), Vector3(bx, bh * 0.5, bz), m, true)
 
 	# 最も高い塔たちに赤い航空障害灯(ゆっくり明滅)
 	var blink := Shader.new()
