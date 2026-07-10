@@ -42,11 +42,15 @@ var bullets_in_flight := 0
 var game_over := false
 
 var rig: SniperCamera
+var girl: SniperGirl        # 主人公アバター（非スコープ時のみ表示）
 var bullet_cam: BulletCam
 var fx: ShotFx
 var sfx: SfxBank
 var hud: Hud
 var debug: TrajectoryDebug  # 弾道検証デバッグ（F3でON/OFF・デバッグビルド専用）
+
+## カメラから見た主人公の立ち位置（リグローカル）。ステージが足場の高さに合わせて上書きする
+var girl_offset := Vector3(-0.55, -1.8, -1.0)
 
 var _walkers: Array = []  # {follow: PathFollow3D, target: Node, speed: float, dir: float}
 var _pending_fire := false
@@ -146,6 +150,11 @@ func _build_cameras() -> void:
 	add_child(rig)
 	rig.position = _rig_position()
 	_configure_rig()
+	# 主人公アバター：リグ（ヨー回転ノード）の子にして視点の左右に体ごと追従させる。
+	# カメラの少し前・左下に立つ＝肩越しの三人称。スコープ中は非表示（一人称へ）
+	girl = SniperGirl.new()
+	rig.add_child(girl)
+	girl.position = girl_offset
 	# 起動時は最も近い標的がほぼ画面中央に見える向きにする
 	var nearest := _nearest_hostile()
 	if nearest != null:
@@ -279,6 +288,10 @@ func _physics_process(delta: float) -> void:
 	if _pending_fire:
 		_pending_fire = false
 		_do_fire()
+	# 主人公アバターはスコープを覗き込むまで見える（覗いたら一人称＝非表示）。
+	# バレットカム上映中は「角で構える姿」が画に入るので表示したままにする
+	if girl != null:
+		girl.visible = rig.aim_blend < 0.5 or is_replay_active()
 	# 照準減速(スティッキーエイム)の更新。空間クエリを使うので物理フレームで計算し、
 	# 入力イベント側はこのキャッシュ値を使う。減速ゾーン内はレティクル中心点が控えめに色づく
 	# （旧オートエイムの「オレンジ＝撃てば当たる」保証ではない。当てるのはプレイヤー自身）
