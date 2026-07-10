@@ -7,6 +7,10 @@ func _rig_position() -> Vector3:
 	return Vector3(0, 6.3, 1.5)  # やぐらの上
 
 
+func _configure_rig() -> void:
+	girl_offset.y = -1.7  # やぐら上面(y=4.6)に足が着く高さ
+
+
 func _build_environment() -> void:
 	var world_env := WorldEnvironment.new()
 	var env := Environment.new()
