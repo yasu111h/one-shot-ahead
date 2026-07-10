@@ -3,6 +3,14 @@
 *.tmp
 export_presets.cfg.bak
 
+# iOS書き出しの成果物（Godotが生成。スペース入りの名前はSourcetreeを壊す）
+build/
+*.xcodeproj/
+*.xcframework/
+*.pck
+PrivacyInfo.xcprivacy
+ONE SHOT AHEAD/
+
 # macOS
 .DS_Store
 
