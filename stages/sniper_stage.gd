@@ -83,6 +83,11 @@ func _rig_position() -> Vector3:
 	return Vector3.ZERO
 
 
+## リグの追加設定（視点の可動範囲など）。サブクラスが上書きする
+func _configure_rig() -> void:
+	pass
+
+
 ## ステージ開始時のランダムな横風（X軸方向）
 func _setup_wind() -> void:
 	wind_speed = randf_range(-5.0, 5.0)
@@ -134,6 +139,7 @@ func _build_cameras() -> void:
 	rig = SniperCamera.new()
 	add_child(rig)
 	rig.position = _rig_position()
+	_configure_rig()
 	# 起動時は最も近い標的がほぼ画面中央に見える向きにする
 	var nearest := _nearest_hostile()
 	if nearest != null:

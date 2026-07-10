@@ -10,8 +10,15 @@ var city: CityBuildings
 
 
 func _rig_position() -> Vector3:
-	# 屋上の手すりの内側。立って構えた目線の高さ
-	return Vector3(0.0, CityBuildings.ROOF_Y + 2.4, 41.0)
+	# 屋上の前縁・右角（パラペットの内側すぐ）。スナイパーは屋上の端に陣取る
+	return Vector3(8.6, CityBuildings.ROOF_Y + 2.0, 35.4)
+
+
+func _configure_rig() -> void:
+	# 角から見渡せる範囲だけに視点を制限する。
+	# 前方（-Z＝標的ビル）を中心に、左右は通りの谷間が見える扇形まで。
+	# 後ろ（自分の屋上側）は向けない＝そこから狙える標的だけを狙う
+	rig.set_view_limits(-40.0, 50.0, -35.0, 12.0)
 
 
 func _mission_text() -> String:
