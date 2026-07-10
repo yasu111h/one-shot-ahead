@@ -37,6 +37,31 @@ const ROOMS := [
 	[12.0, 33.0],
 ]
 
+# --- 小窓の部屋(装飾窓グリッドの1マスぶんの開口。ガラスは小さいまま) ---
+# 窓グリッド定数は building_windows.gdshader / window_break.gd と一致させること
+const WIN_W := 1.7
+const FLOOR_H := 3.2
+const CELL_X0 := 0.20
+const CELL_X1 := 0.86
+const CELL_Y0 := 0.24
+const CELL_Y1 := 0.80
+
+## 標的ビル正面の小窓部屋(窓グリッドのセル座標 [cu, cv])。大部屋と重ならない位置
+const SMALL_ROOM_CELLS := [
+	[-10, 2],   # 左下(x≈-16, y≈8)
+	[4, 12],    # 右上(x≈8, y≈40)
+	[9, 6],     # 右中(x≈16, y≈21)
+]
+
+## 遠距離の狙撃塔 [中心x, 手前面z, 高さ, 部屋のセルv]。数百m先の小窓に標的が立つ。
+## xは標的ビル(±20m)の脇を射線が抜けられる位置に置く(レイキャストで検証済み)
+const FAR_TOWERS := [
+	[-75.0, -430.0, 70.0, 11],   # 約480m先・左手(標的ビルの左脇を抜く)
+	[60.0, -620.0, 90.0, 17],    # 約660m先・右手(標的ビルの右脇を抜く)
+]
+
+var small_rooms: Array[Vector3] = []   # 小窓部屋の標的スポーン点(ワールド。ステージが読む)
+
 var _metal: StandardMaterial3D
 var _concrete: StandardMaterial3D
 var _warm_wall: StandardMaterial3D
@@ -50,6 +75,7 @@ func _ready() -> void:
 	_build_ground()
 	_build_player_building()
 	_build_target_building()
+	_build_far_towers()
 	_build_towers()
 	_build_street_glow()
 
@@ -162,13 +188,26 @@ func _build_player_building() -> void:
 
 # ---------------------------------------------------------------- 標的のビル
 
+## 窓グリッドのセル[cu, cv]の「窓ガラス部分」のRect(シェーダの描く窓と正確に一致する)
+static func cell_rect(cu: int, cv: int) -> Rect2:
+	return Rect2(
+		(float(cu) + CELL_X0) * WIN_W, (float(cv) + CELL_Y0) * FLOOR_H,
+		(CELL_X1 - CELL_X0) * WIN_W, (CELL_Y1 - CELL_Y0) * FLOOR_H)
+
+
 func _build_target_building() -> void:
 	var mat := _win_mat(23.0, 0.30, 0.2)
+
+	# 小窓部屋の開口(装飾窓の1マスと同じ位置・同じ大きさ。ガラスは小さいまま)
+	var small_rects: Array[Rect2] = []
+	for c in SMALL_ROOM_CELLS:
+		small_rects.append(cell_rect(c[0], c[1]))
 
 	# 正面の壁：窓の開口だけを穴として残し、残りをグリッドで埋める
 	var openings: Array[Rect2] = []
 	for r in ROOMS:
 		openings.append(Rect2(r[0] - OPEN_W * 0.5, r[1] + SILL, OPEN_W, OPEN_H))
+	openings.append_array(small_rects)
 	_grid_fill((FACADE_Z + BAND_Z0) * 0.5, FACADE_T, openings, mat)
 
 	# 開口に窓ガラスをはめる（撃つと割れる。弾は止めない＝レイヤ5）
@@ -181,9 +220,14 @@ func _build_target_building() -> void:
 	var rooms: Array[Rect2] = []
 	for r in ROOMS:
 		rooms.append(Rect2(r[0] - ROOM_W * 0.5, r[1], ROOM_W, ROOM_H))
+	rooms.append_array(small_rects)   # 小窓部屋の空洞も帯に空ける
 	var band_zc := (BAND_Z0 + BAND_Z1) * 0.5
 	var band_d := BAND_Z0 - BAND_Z1
 	_grid_fill(band_zc, band_d, rooms, mat)
+
+	# 小窓部屋の内装・灯り・ガラス・スポーン点
+	for rect in small_rects:
+		_build_small_room(rect, FACADE_Z, BAND_Z0, BAND_Z1)
 
 	# ビル本体(部屋より奥の詰まった塊)
 	_box(Vector3(X_MAX - X_MIN, Y_MAX - Y_MIN, BAND_Z1 - MASS_Z1),
@@ -195,9 +239,11 @@ func _build_target_building() -> void:
 
 ## 壁面を格子に分割し、穴(holes)以外のセルを箱で埋める。
 ## 穴の縁が境界線になるので、窓まわりに窓台・まぐさ・方立が自然に出来る。
-func _grid_fill(z_center: float, z_depth: float, holes: Array[Rect2], mat: Material) -> void:
-	var xs: Array[float] = [X_MIN, X_MAX]
-	var ys: Array[float] = [Y_MIN, Y_MAX]
+## x0..x1/y0..y1で壁面の範囲を指定できる(既定は標的ビルの正面)
+func _grid_fill(z_center: float, z_depth: float, holes: Array[Rect2], mat: Material,
+		x_min := X_MIN, x_max := X_MAX, y_min := Y_MIN, y_max := Y_MAX) -> void:
+	var xs: Array[float] = [x_min, x_max]
+	var ys: Array[float] = [y_min, y_max]
 	for h in holes:
 		xs.append(h.position.x)
 		xs.append(h.end.x)
@@ -229,6 +275,72 @@ func _uniq_sorted(v: Array[float]) -> Array[float]:
 		if out.is_empty() or absf(out[-1] - x) > 0.005:
 			out.append(x)
 	return out
+
+
+## 小窓部屋: 装飾窓1マスぶんの開口の裏にある小さな空間。
+## 内装(暖色)・灯り・小さなガラス・立ち標的のスポーン点を作る。
+## rect=開口(壁面座標)、facade_z=正面壁の外面z、band_z0/band_z1=空洞の手前/奥
+func _build_small_room(rect: Rect2, facade_z: float, band_z0: float, band_z1: float) -> void:
+	var cx := rect.position.x + rect.size.x * 0.5
+	var fy := rect.position.y            # 開口の下端=部屋の床
+	var w := rect.size.x
+	var h := rect.size.y
+	var zc := (band_z0 + band_z1) * 0.5
+	var zd := band_z0 - band_z1
+
+	# 内装(床・天井・左右・奥)。薄い暖色パネル
+	_box(Vector3(w, 0.1, zd), Vector3(cx, fy + 0.05, zc), _warm_wall, true)
+	_box(Vector3(w, 0.1, zd), Vector3(cx, fy + h - 0.05, zc), _warm_wall, false)
+	for sx in [-1.0, 1.0]:
+		_box(Vector3(0.1, h, zd), Vector3(cx + sx * (w * 0.5 - 0.05), fy + h * 0.5, zc), _warm_wall, false)
+	_box(Vector3(w, h, 0.1), Vector3(cx, fy + h * 0.5, band_z1 + 0.05), _warm_wall, true)
+
+	# 灯り(小さい部屋なので控えめ。夜景の中で「そこに誰かいる」と分かる)
+	var light := OmniLight3D.new()
+	light.light_color = Color(1.0, 0.78, 0.5)
+	light.light_energy = 1.6
+	light.omni_range = 4.0
+	light.shadow_enabled = false
+	light.position = Vector3(cx, fy + h - 0.3, zc)
+	add_child(light)
+
+	# 開口に小さなガラス(撃つと割れる。弾は止めない=レイヤ5)
+	var pane := GlassPane.new(Vector2(w, h))
+	add_child(pane)
+	pane.position = Vector3(cx, fy + h * 0.5, (facade_z + band_z0) * 0.5)
+
+	# 立ち標的のスポーン点(胴体中心)。部屋の中央やや窓寄り
+	small_rooms.append(Vector3(cx, fy + 0.95, zc + 0.3))
+
+
+## 遠距離の狙撃塔。正面(+Z側)に小窓部屋が1つだけ灯る高層タワー
+func _build_far_towers() -> void:
+	var i := 0
+	for t in FAR_TOWERS:
+		var cx: float = t[0]
+		var fz: float = t[1]          # 手前面のz
+		var h: float = t[2]
+		var cv: int = t[3]
+		var hw := 8.0                 # 半幅
+		var facade_t := 0.7
+		var band_d := 2.6
+		var depth := 14.0
+		var mat := _win_mat(300.0 + float(i) * 11.3, 0.26, 0.25)
+
+		# 開口セル: 塔の中心に最も近い窓セル
+		var cu := roundi(cx / WIN_W - 0.5)
+		var rect := cell_rect(cu, cv)
+
+		# 正面の壁(開口だけ穴)→空洞の帯(開口の空間だけ穴)→本体
+		var holes: Array[Rect2] = [rect]
+		_grid_fill(fz - facade_t * 0.5, facade_t, holes, mat, cx - hw, cx + hw, 0.0, h)
+		_grid_fill(fz - facade_t - band_d * 0.5, band_d, holes, mat, cx - hw, cx + hw, 0.0, h)
+		_box(Vector3(hw * 2.0, h, depth - facade_t - band_d),
+			Vector3(cx, h * 0.5, fz - facade_t - band_d - (depth - facade_t - band_d) * 0.5), mat, true)
+
+		# 小窓部屋(内装・灯り・ガラス・スポーン点)
+		_build_small_room(rect, fz, fz - facade_t, fz - facade_t - band_d)
+		i += 1
 
 
 ## 部屋の内装（暖色の壁・床・天井・家具・灯り）。この一室だけが夜景の中で暖かく灯る

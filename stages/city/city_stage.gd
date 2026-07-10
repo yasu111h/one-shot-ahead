@@ -23,7 +23,8 @@ func _configure_rig() -> void:
 
 
 func _mission_text() -> String:
-	return "MISSION: ELIMINATE 3 HOSTILES  /  DO NOT SHOOT CIVILIANS (WHITE)"
+	# 小窓の標的が増えたので数は動的に(HUD構築は標的スポーン後に走る)
+	return "MISSION: ELIMINATE %d HOSTILES  /  DO NOT SHOOT CIVILIANS (WHITE)" % hostiles.size()
 
 
 ## 夜の街: 雲の流れる濃紺の空。地平線は街明かりの照り返しで青白い
@@ -95,3 +96,9 @@ func _spawn_targets() -> void:
 		# 民間人：窓際に立ちすくむ。撃てば即ミッション失敗
 		if i in CIVILIAN_ROOMS:
 			_add_standing(Vector3(cx + 1.9, y, -161.8), false)
+
+	# 小窓の部屋(標的ビルの小さいガラス3つ＋数百m先の狙撃塔2つ)：
+	# 悪人が窓辺に立って外を見張っている。ガラスは小さいまま=見えるのは上半身だけ
+	for p in city.small_rooms:
+		var man := _add_standing(p, true)
+		man.rotation.y = PI   # 窓の外(プレイヤー側)を向く
