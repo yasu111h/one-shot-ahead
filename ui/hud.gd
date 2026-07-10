@@ -25,6 +25,8 @@ var _zoom_label: Label
 var _stamp: Label
 var _center_msg: Label
 var _retry_btn: Button
+var _select_btn: Button
+var _menu_btn: Button
 var _miss_toggle: Button
 var _fire_btn: TouchScreenButton
 var _scope_btn: TouchScreenButton
@@ -56,7 +58,7 @@ func _ready() -> void:
 	# ラベル類
 	_targets_label = _make_label("TARGETS 0/0", 15, Control.PRESET_TOP_LEFT, Vector2(12, 8))
 	_hint_label = _make_label(
-		"AIM: R-DRAG / FIRE: L-CLICK / SCOPE: Q or WHEEL",
+		"AIM: R-DRAG / FIRE: L-CLICK / SCOPE: Q or WHEEL / MENU: ESC",
 		10, Control.PRESET_TOP_LEFT, Vector2(12, 30))
 	_hint_label.modulate = Color(1, 1, 1, 0.55)
 	_mission_label = _make_label(mission, 13, Control.PRESET_TOP_LEFT, Vector2(12, 48))
@@ -84,6 +86,26 @@ func _ready() -> void:
 	_retry_btn.position += Vector2(0, 10)
 	_retry_btn.visible = false
 	_retry_btn.pressed.connect(func() -> void: stage.retry())
+	# リザルト用「STAGE SELECT」ボタン（RETRYの下）
+	_select_btn = Button.new()
+	_select_btn.text = "STAGE SELECT"
+	_select_btn.custom_minimum_size = Vector2(180, 44)
+	_select_btn.add_theme_font_size_override("font_size", 16)
+	add_child(_select_btn)
+	_select_btn.set_anchors_and_offsets_preset(Control.PRESET_CENTER)
+	_select_btn.position += Vector2(0, 74)
+	_select_btn.visible = false
+	_select_btn.pressed.connect(func() -> void: GameManager.goto_select())
+	# 常設の「MENU」ボタン（右上・ミスリプレイトグルの下）
+	_menu_btn = Button.new()
+	_menu_btn.text = "MENU"
+	_menu_btn.custom_minimum_size = Vector2(150, 26)
+	_menu_btn.add_theme_font_size_override("font_size", 11)
+	_menu_btn.modulate = Color(1, 1, 1, 0.75)
+	add_child(_menu_btn)
+	_menu_btn.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT)
+	_menu_btn.position += Vector2(-158, 66)
+	_menu_btn.pressed.connect(func() -> void: GameManager.goto_select())
 	# ミスリプレイ設定トグル（右上・タップ/クリックで切替。値はSettingsが永続化）
 	_miss_toggle = Button.new()
 	_miss_toggle.custom_minimum_size = Vector2(150, 26)
@@ -181,6 +203,7 @@ func _process(delta: float) -> void:
 	_reticle.scoped = scoped
 	_zoom_label.visible = scoped and not replay
 	_miss_toggle.visible = not replay
+	_menu_btn.visible = not replay
 	_zoom_label.text = ["1x", "4x", "8x"][rig.zoom_stage]
 	_ammo_label.text = "AMMO %d/%d" % [stage.ammo, stage.max_ammo]
 	_targets_label.text = "TARGETS %d/%d" % [stage.hits, stage.hostiles.size()]
@@ -249,6 +272,7 @@ func show_clear() -> void:
 	_center_msg.modulate = Color(0.95, 0.85, 0.5)
 	_center_msg.visible = true
 	_retry_btn.visible = true
+	_select_btn.visible = true
 
 
 ## ミッション失敗（弾切れ・民間人の誤射など）
@@ -257,6 +281,7 @@ func show_fail(msg: String) -> void:
 	_center_msg.modulate = Color(0.95, 0.45, 0.4)
 	_center_msg.visible = true
 	_retry_btn.visible = true
+	_select_btn.visible = true
 
 
 ## 動的レティクル（TABIJIのcombat_hud.gd:56-77を移植）

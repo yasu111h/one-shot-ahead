@@ -232,6 +232,9 @@ func _unhandled_input(event: InputEvent) -> void:
 			KEY_F:
 				if event.pressed:
 					request_fire()  # 予備の発射キー
+			KEY_ESCAPE:
+				if event.pressed:
+					GameManager.goto_select()  # ステージ選択へ戻る
 
 
 # ---------------------------------------------------------------- 射撃
