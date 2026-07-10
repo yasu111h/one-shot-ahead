@@ -18,6 +18,7 @@ extends Node3D
 const WIND_FACTOR := 0.6  # 風速(m/s)→弾への加速度(m/s^2)係数
 const RANGE_MASK := 0b1111
 const TERRAIN_MASK := 0b0001
+const GLASS_MASK := 0b10000  # 窓ガラス(レイヤ5)。割れるだけで弾は逸れない・止まらない
 const KILLCAM_COOLDOWN := 3.0  # バレットカムの再発動までの最短間隔(秒)
 
 @export var muzzle_speed := 300.0  # 弾速 m/s（可変）
@@ -334,6 +335,7 @@ func _do_fire() -> void:
 	bullet.wind_accel = wind_accel
 	bullet.hit.connect(_on_bullet_hit.bind(bullet))
 	bullet.vanished.connect(_on_bullet_vanished)
+	bullet.glass_hit.connect(_on_bullet_glass)
 	bullets_in_flight += 1
 	fx.attach_tracer(bullet)
 	debug.track_bullet(bullet)  # 弾道デバッグ：実弾の軌跡を赤線で記録
@@ -386,6 +388,7 @@ func _start_replay(start: Vector3, predicted: Dictionary, dir: Vector3) -> void:
 	var replay_world_dt: float = BulletCam.SLOWMO * BulletCam.FLIGHT_TIME
 	var to: Vector3 = point - tvel * (predicted.time - replay_world_dt)
 	debug.on_replay(start, to)  # 弾道デバッグ：リプレイ弾道（黄線）の始点・終点を記録
+	_schedule_replay_glass(start, to)
 	bullet_cam.play(start, to, func() -> void:
 		_on_replay_impact(target, to, zone, dir))
 
@@ -400,6 +403,7 @@ func _start_miss_replay(start: Vector3, dir: Vector3) -> void:
 	var normal: Vector3 = impact.normal
 	var grounded: bool = impact.grounded
 	debug.on_replay(start, point)  # 弾道デバッグ：ミスリプレイ弾道も黄線で記録
+	_schedule_replay_glass(start, point)
 	bullet_cam.play(start, point, func() -> void:
 		if grounded:
 			fx.impact_burst(point, normal)
@@ -520,6 +524,44 @@ func _closest_on_segment_to_ray(a: Vector3, b: Vector3, o: Vector3, d: Vector3) 
 	if den > 0.0001:
 		s = clampf((ud * dw - dd * uw) / den, 0.0, 1.0)
 	return a + u * s
+
+
+# ---------------------------------------------------------------- ガラス
+
+## 実弾がガラスを通過した（弾は止まらず、割るだけ）
+func _on_bullet_glass(result: Dictionary, dir: Vector3) -> void:
+	var pane: Object = result.collider
+	if pane != null and pane.has_method("shatter"):
+		pane.shatter(result.position, dir)
+		sfx.play_glass()
+
+
+## リプレイ弾道(from→to)上のガラスを「リプレイの弾が通過する瞬間」に割る。
+## バレットカムはスロー(time_scale)で進むので、タイマーは実時間
+## (ignore_time_scale)で刻む＝等速再生のリプレイ弾の位置と正確に同期する。
+func _schedule_replay_glass(from: Vector3, to: Vector3) -> void:
+	var total := from.distance_to(to)
+	if total < 0.5:
+		return
+	var dir := (to - from) / total
+	var pos := from
+	for i in 3:
+		var query := PhysicsRayQueryParameters3D.create(pos, to, GLASS_MASK)
+		query.collide_with_areas = true
+		var g := get_world_3d().direct_space_state.intersect_ray(query)
+		if g.is_empty():
+			return
+		var pane: Object = g.collider
+		var point: Vector3 = g.position
+		var delay: float = from.distance_to(point) / total * BulletCam.FLIGHT_TIME
+		# タイマーはシーンよりも長生きするので、リトライ等で破棄済みなら何もしない
+		get_tree().create_timer(delay, true, false, true).timeout.connect(func() -> void:
+			if not is_instance_valid(self) or not is_instance_valid(pane):
+				return
+			if pane.has_method("shatter"):
+				pane.shatter(point, dir)
+				sfx.play_glass())
+		pos = point + dir * 0.1  # 同じ板を二重検知しないよう少し先へ進めて再走査
 
 
 # ---------------------------------------------------------------- 命中処理（通常弾）

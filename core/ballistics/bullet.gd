@@ -5,8 +5,10 @@ extends Node3D
 
 signal hit(result: Dictionary)  # 何かに命中（intersect_rayの結果を渡す）
 signal vanished                 # 何にも当たらず寿命切れ
+signal glass_hit(result: Dictionary, dir: Vector3)  # ガラス通過（弾は止まらず割るだけ）
 
-const HIT_MASK := 0b1111  # 地形1 + ボディ2 + ヘッド4 + 乗り物8
+const HIT_MASK := 0b1111    # 地形1 + ボディ2 + ヘッド4 + 乗り物8
+const GLASS_MASK := 0b10000  # ガラス5（HIT_MASK外＝弾を止めない。通過検知だけする）
 const LIFETIME := 5.0
 
 var velocity := Vector3.ZERO
@@ -29,6 +31,8 @@ func _physics_process(delta: float) -> void:
 	var query := PhysicsRayQueryParameters3D.create(prev, next, HIT_MASK)
 	query.collide_with_areas = true  # ヘッドショット判定のArea3Dも拾う
 	var result := get_world_3d().direct_space_state.intersect_ray(query)
+	# 停止点(命中点 or 区間の終端)までに通過したガラスを割る(弾は止まらない)
+	_check_glass(prev, result.position if result else next)
 	if result:
 		_done = true
 		global_position = result.position
@@ -40,3 +44,17 @@ func _physics_process(delta: float) -> void:
 		_done = true
 		vanished.emit()
 		queue_free()
+
+
+## 区間内のガラス(レイヤ5)を検知して通知する。1フレームで複数枚を貫くこともある
+func _check_glass(from: Vector3, to: Vector3) -> void:
+	var vdir := velocity.normalized()
+	var pos := from
+	for i in 3:
+		var query := PhysicsRayQueryParameters3D.create(pos, to, GLASS_MASK)
+		query.collide_with_areas = true
+		var g := get_world_3d().direct_space_state.intersect_ray(query)
+		if g.is_empty():
+			return
+		glass_hit.emit(g, vdir)
+		pos = g.position + vdir * 0.1  # 同じ板を二重検知しないよう少し先へ進めて再走査

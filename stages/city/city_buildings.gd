@@ -171,6 +171,12 @@ func _build_target_building() -> void:
 		openings.append(Rect2(r[0] - OPEN_W * 0.5, r[1] + SILL, OPEN_W, OPEN_H))
 	_grid_fill((FACADE_Z + BAND_Z0) * 0.5, FACADE_T, openings, mat)
 
+	# 開口に窓ガラスをはめる（撃つと割れる。弾は止めない＝レイヤ5）
+	for r in ROOMS:
+		var pane := GlassPane.new(Vector2(OPEN_W, OPEN_H))
+		add_child(pane)
+		pane.position = Vector3(r[0], r[1] + SILL + OPEN_H * 0.5, (FACADE_Z + BAND_Z0) * 0.5)
+
 	# 部屋の帯：部屋そのものを穴として残し、残りをグリッドで埋める
 	var rooms: Array[Rect2] = []
 	for r in ROOMS:
