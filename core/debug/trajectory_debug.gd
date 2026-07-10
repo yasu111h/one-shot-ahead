@@ -23,12 +23,13 @@ const RAY_MASK := 0b1111                    # 地形1+ボディ2+ヘッド4+乗�
 const VIEW_NAMES := ["normal", "side", "impact"]
 const DASH_LEN := 2.0                       # 破線のダッシュ長(m)。赤と黄は位相をずらして交互に見せる
 const MATCH_TOL := 0.1                      # 「一致」と判定する許容誤差(m)
+const MARKER_LIFETIME := 3.0                # マーカー（球＋名前）の表示時間(実秒)。線とパネルは残る
 
 var stage  # SniperStage（型を書くと相互参照になるため未型付け）
 var enabled := false
 
 var _mesh: ImmediateMesh
-var _markers: Array[Node3D] = []
+var _markers: Array[Dictionary] = []        # {node, age}。寿命つき（視界を塞がない）
 var _panel: CanvasLayer
 var _label: Label
 var _view := 0
@@ -165,9 +166,18 @@ func on_replay(from: Vector3, to: Vector3) -> void:
 
 # ---------------------------------------------------------------- 毎フレーム処理
 
-func _process(_delta: float) -> void:
+func _process(delta: float) -> void:
 	if not enabled:
 		return
+	# マーカー（球＋名前ラベル）は数秒で自動消去（AIM/REAL/REPLAYの文字が
+	# 視界を塞ぎ続けないように）。線と数値パネルは次の発射まで残る
+	var real_dt := delta / maxf(Engine.time_scale, 0.001)
+	for i in range(_markers.size() - 1, -1, -1):
+		_markers[i].age += real_dt
+		if _markers[i].age > MARKER_LIFETIME:
+			if is_instance_valid(_markers[i].node):
+				_markers[i].node.queue_free()
+			_markers.remove_at(i)
 	# リプレイ弾の位置サンプリング（bullet_camの弾丸モデルの実座標）
 	var bc = stage.bullet_cam
 	if _has_replay and bc != null and bc.bolt_flying():
@@ -231,7 +241,9 @@ func _update_panel() -> void:
 		lines.append("fire to record...")
 		_label.text = "\n".join(lines)
 		return
-	lines.append("ASSIST: %s" % ("ON(auto-aim bent)" if _assisted else "OFF(raw aim)"))
+	lines.append("GRAVITY: %s / WIND: %s" % [
+		"ON" if Ballistics.gravity_enabled else "OFF",
+		"ON" if Ballistics.WIND_ENABLED else "OFF"])
 	lines.append("AIM    d=%.1fm  %s" % [_aim_start.distance_to(_aim_point), _fmt(_aim_point)])
 	var drop := 0.0
 	if _has_real_impact:
@@ -254,10 +266,14 @@ func _update_panel() -> void:
 	# 結論の1行：数値を読まなくても分かる判定。緑線・赤線・黄線が重なって
 	# 1本に見える時は、これがMATCHなら「一致している証拠」
 	if _has_real_impact and _has_replay and gap >= 0.0 and dev >= 0.0:
-		var ok := absf(drop) < MATCH_TOL and gap < MATCH_TOL and dev < MATCH_TOL
-		lines.insert(1, "RESULT: %s" % (
-			"MATCH - aim/real/replay match (lines overlap)" if ok
-			else "MISMATCH!! check DROP/GAP/DEV below"))
+		# 重力ON時はDROP（狙点より下への落下）があるのが正しい挙動なので判定から外し、
+		# 「実弾とリプレイが同じ弾道か」（GAP・PATH DEV）だけを見る
+		var ok := gap < MATCH_TOL and dev < MATCH_TOL \
+			and (Ballistics.gravity_enabled or absf(drop) < MATCH_TOL)
+		var msg := "MATCH - aim/real/replay match (lines overlap)"
+		if Ballistics.gravity_enabled:
+			msg = "MATCH - real/replay match (DROP is expected w/ gravity)"
+		lines.insert(1, "RESULT: %s" % (msg if ok else "MISMATCH!! check DROP/GAP/DEV below"))
 		_label.add_theme_color_override(
 			"font_color", Color(0.7, 1.0, 0.75) if ok else Color(1.0, 0.45, 0.4))
 	_label.text = "\n".join(lines)
@@ -355,13 +371,13 @@ func _add_marker(pos: Vector3, text: String, col: Color, label_h := 0.9) -> void
 	l.billboard = BaseMaterial3D.BILLBOARD_ENABLED
 	l.position = Vector3(0, label_h, 0)
 	m.add_child(l)
-	_markers.append(m)
+	_markers.append({"node": m, "age": 0.0})
 
 
 func _clear_shot() -> void:
-	for m in _markers:
-		if is_instance_valid(m):
-			m.queue_free()
+	for e in _markers:
+		if is_instance_valid(e.node):
+			e.node.queue_free()
 	_markers.clear()
 	_has_shot = false
 	_assisted = false

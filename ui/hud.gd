@@ -29,6 +29,7 @@ var _retry_btn: Button
 var _select_btn: Button
 var _menu_btn: Button
 var _miss_toggle: Button
+var _gravity_toggle: Button
 var _fire_btn: TouchScreenButton
 var _scope_btn: TouchScreenButton
 var _stamp_t := -1.0
@@ -122,6 +123,18 @@ func _ready() -> void:
 		Settings.miss_replay_enabled = not Settings.miss_replay_enabled
 		_update_miss_toggle())
 	_update_miss_toggle()
+	# 重力弾道トグル（右上・MENUの下）。ONで弾が放物線を描き狙点より下に落ちる
+	_gravity_toggle = Button.new()
+	_gravity_toggle.custom_minimum_size = Vector2(150, 26)
+	_gravity_toggle.add_theme_font_size_override("font_size", 11)
+	_gravity_toggle.modulate = Color(1, 1, 1, 0.75)
+	add_child(_gravity_toggle)
+	_gravity_toggle.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT)
+	_gravity_toggle.position += Vector2(-158, 98)
+	_gravity_toggle.pressed.connect(func() -> void:
+		Settings.gravity_enabled = not Settings.gravity_enabled
+		_update_gravity_toggle())
+	_update_gravity_toggle()
 	# 操作ボタン（マルチタッチ対応のTouchScreenButton）
 	_fire_btn = _make_touch_button("FIRE", 52.0, Color(1.0, 0.55, 0.45, 0.9))
 	_fire_btn.pressed.connect(func() -> void: stage.request_fire())
@@ -207,6 +220,7 @@ func _process(delta: float) -> void:
 	_reticle.scoped = scoped
 	_zoom_label.visible = scoped and not replay
 	_miss_toggle.visible = not replay
+	_gravity_toggle.visible = not replay
 	_menu_btn.visible = not replay
 	_zoom_label.text = ["1x", "4x", "8x"][rig.zoom_stage]
 	_ammo_label.text = "AMMO %d/%d" % [stage.ammo, stage.max_ammo]
@@ -270,6 +284,11 @@ func show_miss_stamp() -> void:
 ## ミスリプレイ設定トグルの表記を現在の設定値に合わせる
 func _update_miss_toggle() -> void:
 	_miss_toggle.text = "MISS REPLAY: %s" % ("ON" if Settings.miss_replay_enabled else "OFF")
+
+
+## 重力弾道トグルの表記を現在の設定値に合わせる
+func _update_gravity_toggle() -> void:
+	_gravity_toggle.text = "GRAVITY: %s" % ("ON" if Settings.gravity_enabled else "OFF")
 
 
 func show_clear() -> void:

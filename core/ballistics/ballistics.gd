@@ -5,21 +5,22 @@ extends RefCounted
 
 const GRAVITY := Vector3(0.0, -9.8, 0.0)
 
-## 弾道の偏向フラグ（2026-07-10ユーザー決定：狙った点にそのまま当たる直線弾道）
-## 両方 false ＝直線・等速。「照準の命中点」「実弾の着弾点」「予測（predict_*）」
+## 弾道の偏向フラグ（2026-07-10ユーザー決定：既定は狙った点にそのまま当たる直線弾道）
+## 両方オフ＝直線・等速。「照準の命中点」「実弾の着弾点」「予測（predict_*）」
 ## 「リプレイの終点」が原理的に同一直線上に乗り、ズレが消える。
 ## 弾速300m/sの飛行時間はそのまま＝動く標的へのリード（偏差撃ち）は生きる。
-## 将来リアル弾道（重力落下・風流され）を復活させる場合は true に戻すだけでよい。
-## 実弾(bullet.gd)・着弾予測がともに effective_accel() を参照するため、
-## 切り替えても両者の整合は保たれる。
-const GRAVITY_ENABLED := false
+## 重力はHUD右上の「GRAVITY」ボタンでいつでも切替可（値はSettingsが永続化）。
+## オンにすると弾は放物線を描き、狙点より下に落ちる（落下量はデバッグのDROPで確認可）。
+## 実弾(bullet.gd)・着弾予測・リプレイがすべて effective_accel() を参照するため、
+## 切り替えても三者の整合は保たれる。
+static var gravity_enabled := false
 const WIND_ENABLED := false
 
 
 ## 弾に働く実効加速度（フラグに従う）。直線弾道時は Vector3.ZERO
 static func effective_accel(wind_accel: Vector3) -> Vector3:
 	var a := Vector3.ZERO
-	if GRAVITY_ENABLED:
+	if gravity_enabled:
 		a += GRAVITY
 	if WIND_ENABLED:
 		a += wind_accel
@@ -115,7 +116,8 @@ static func predict_miss_point(
 		var query := PhysicsRayQueryParameters3D.create(pos, next, 1)
 		var hit := space_state.intersect_ray(query)
 		if hit:
-			return {"point": hit.position, "normal": hit.get("normal", Vector3.UP), "grounded": true}
+			return {"point": hit.position, "normal": hit.get("normal", Vector3.UP),
+				"grounded": true, "time": t}
 		pos = next
 		t += dt
-	return {"point": pos, "normal": Vector3.UP, "grounded": false}
+	return {"point": pos, "normal": Vector3.UP, "grounded": false, "time": t}

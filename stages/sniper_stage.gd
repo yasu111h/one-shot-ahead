@@ -379,8 +379,10 @@ func _start_replay(start: Vector3, predicted: Dictionary, dir: Vector3) -> void:
 	var to: Vector3 = point - tvel * (predicted.time - replay_world_dt)
 	debug.on_replay(start, to)  # 弾道デバッグ：リプレイ弾道（黄線）の始点・終点を記録
 	_schedule_replay_glass(start, to)
+	# 加速度と実飛行時間を渡す＝重力ONならリプレイ弾も実弾と同じ放物線を描く
 	bullet_cam.play(start, to, func() -> void:
-		_on_replay_impact(target, to, zone, dir))
+		_on_replay_impact(target, to, zone, dir),
+		Ballistics.effective_accel(wind_accel), predicted.time)
 
 
 ## ミス弾のバレットカム開始。地面への着弾予測点（最大射程まで何にも当たらなければ
@@ -394,11 +396,13 @@ func _start_miss_replay(start: Vector3, dir: Vector3) -> void:
 	var grounded: bool = impact.grounded
 	debug.on_replay(start, point)  # 弾道デバッグ：ミスリプレイ弾道も黄線で記録
 	_schedule_replay_glass(start, point)
+	# 加速度と実飛行時間を渡す＝重力ONならリプレイ弾も実弾と同じ放物線を描く
 	bullet_cam.play(start, point, func() -> void:
 		if grounded:
 			fx.impact_burst(point, normal)
 			_spawn_impact_dust(point)
-		hud.show_miss_stamp())
+		hud.show_miss_stamp(),
+		Ballistics.effective_accel(wind_accel), impact.time)
 
 
 ## リプレイの着弾の瞬間：ここで初めてダメージ・スタンプ・ヒットマーカー・命中音を出す

@@ -11,6 +11,13 @@ var miss_replay_enabled := true:
 		miss_replay_enabled = v
 		_save()
 
+## 重力弾道（放物線）を使うか。Ballisticsのstatic varへ反映して全弾道計算に効かせる
+var gravity_enabled := false:
+	set(v):
+		gravity_enabled = v
+		Ballistics.gravity_enabled = v
+		_save()
+
 
 func _ready() -> void:
 	_load()
@@ -21,10 +28,12 @@ func _load() -> void:
 	if cfg.load(SETTINGS_PATH) != OK:
 		return  # 初回起動などファイルなし＝デフォルトのまま
 	miss_replay_enabled = bool(cfg.get_value(SECTION, "miss_replay", true))
+	gravity_enabled = bool(cfg.get_value(SECTION, "gravity", false))
 
 
 func _save() -> void:
 	var cfg := ConfigFile.new()
 	cfg.load(SETTINGS_PATH)  # 既存の設定を保持したまま上書き（無ければ新規作成）
 	cfg.set_value(SECTION, "miss_replay", miss_replay_enabled)
+	cfg.set_value(SECTION, "gravity", gravity_enabled)
 	cfg.save(SETTINGS_PATH)

@@ -6,7 +6,9 @@ extends Node
 ## 確定した弾道(発射点→着弾点)をスロー演出で再生し直す方式。
 ## 命中確定弾のほか、ミス弾（設定ON時）の地面着弾点までの見送りにも使う。
 ##
-## 使い方: play(発射点, 着弾点, 着弾時に呼ぶCallable)
+## 使い方: play(発射点, 着弾点, 着弾時に呼ぶCallable, 弾の加速度, 実飛行時間)
+##   ・加速度と実飛行時間を渡すと弾は放物線（重力弾道）を描いて再生される。
+##     省略時（加速度ゼロ）は従来どおり直線再生
 ##   ・着弾時Callableの中でダメージ適用と距離スタンプ表示を行う(=リプレイの瞬間に効果が出る)
 ##   ・スロー中の着弾FXは出さない(速度違和感になる)
 ##   ・再生中は active が true。終了で finished シグナル。
@@ -38,6 +40,9 @@ var _bars: CanvasLayer
 var _from := Vector3.ZERO
 var _to := Vector3.ZERO
 var _dir := Vector3.FORWARD
+var _accel := Vector3.ZERO     # 弾の実効加速度（重力弾道の再生用。ゼロなら直線）
+var _ft := 0.0                 # 実飛行時間（ワールド秒）。放物線の形の決定に使う
+var _v0 := Vector3.ZERO        # 初速（from→toへ_ft秒・加速度_accelで届く解）
 var _t := 0.0                  # 飛翔の進行(0..1)
 var _spin := 0.0               # ライフリング回転の累積角(rad)
 var _hold := 0.0
@@ -105,7 +110,9 @@ func _ready() -> void:
 
 
 ## リプレイ開始。from→to の弾道をスローで再生し、着弾の瞬間に on_impact を呼ぶ。
-func play(from: Vector3, to: Vector3, on_impact: Callable = Callable()) -> void:
+## accel・flight_time を渡すと放物線再生（重力弾道と同じ弧を描く）
+func play(from: Vector3, to: Vector3, on_impact: Callable = Callable(),
+		accel := Vector3.ZERO, flight_time := 0.0) -> void:
 	if active:
 		return
 	var seg := to - from
@@ -117,6 +124,16 @@ func play(from: Vector3, to: Vector3, on_impact: Callable = Callable()) -> void:
 	_from = from
 	_to = to
 	_dir = seg.normalized()
+	# 放物線の初速解：to = from + v0*T + 0.5*a*T^2 を v0 について解く。
+	# 加速度ゼロ or 時間なしなら等速直線（従来どおり）
+	if flight_time > 0.001 and accel != Vector3.ZERO:
+		_accel = accel
+		_ft = flight_time
+		_v0 = (seg - 0.5 * accel * flight_time * flight_time) / flight_time
+	else:
+		_accel = Vector3.ZERO
+		_ft = 1.0
+		_v0 = seg  # pos = from + seg*t ＝ 直線lerp
 	_on_impact = on_impact
 	_t = 0.0
 	_spin = 0.0
@@ -159,12 +176,18 @@ func _process(delta: float) -> void:
 			_finish()
 
 
-## 進行度(0..1)に応じて弾とカメラを配置する。弾道は直線(from.lerp(to,t))
+## 進行度(0..1)に応じて弾とカメラを配置する。
+## 弾道は from + v0*t + 0.5*a*t^2（加速度ゼロなら直線lerpと同じ）
 func _place(te: float) -> void:
-	var pos := _from.lerp(_to, te)
+	var wt := te * _ft
+	var pos := _from + _v0 * wt + 0.5 * _accel * wt * wt
 	_bolt.global_position = pos
-	var up := Vector3.UP if absf(_dir.dot(Vector3.UP)) < 0.98 else Vector3.RIGHT
-	_bolt.look_at(pos + _dir, up)
+	# 弾の向きは「その瞬間の速度方向」（放物線なら徐々に下を向く）
+	var vdir := (_v0 + _accel * wt).normalized()
+	if vdir.length() < 0.5:
+		vdir = _dir
+	var up := Vector3.UP if absf(vdir.dot(Vector3.UP)) < 0.98 else Vector3.RIGHT
+	_bolt.look_at(pos + vdir, up)
 	_bolt.rotate_object_local(Vector3.FORWARD, _spin)   # look_at後に累積回転を乗せる
 
 	# カメラ: 弾の斜め後ろから追走し、飛翔中に弾の周りをゆっくり回り込む。
@@ -176,7 +199,7 @@ func _place(te: float) -> void:
 		+ Vector3.UP * (CAM_UP + END_UP_EXTRA * pull)
 	var offset := base.rotated(_dir, lerpf(-SWEEP_RAD * 0.3, SWEEP_RAD, te))
 	_cam.global_position = pos + offset
-	_cam.look_at(pos + _dir * 2.0, Vector3.UP)
+	_cam.look_at(pos + vdir * 2.0, Vector3.UP)
 
 
 func _look_impact() -> void:
