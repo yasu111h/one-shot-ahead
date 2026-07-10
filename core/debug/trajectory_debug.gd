@@ -9,15 +9,15 @@ extends Node3D
 ##   ③ リプレイ(バレットカム)の弾の軌跡     … 黄の線＋REPLAYマーカー
 ##      （実弾道との最大乖離を数値表示。重なっていれば「同じ弾道」）
 ##
-## 命中確定弾は実弾を飛ばさない設計のため、デバッグ中はダメージなしの
-## 「ゴースト実弾」をSniperStageが裏で飛ばし、その軌跡を赤線として記録する。
+## 赤線は「実弾と同一の積分・当たり判定」で発射の瞬間に一括シミュレートするため、
+## 命中確定弾（実弾を飛ばさない）でも長距離でも、撃った直後に全長が表示される。
 ##
 ## Tab：視点切替（0=通常 → 1=弾道を真横から → 2=着弾点アップ → 0…）
 ## ※ 弾道は視線方向と重なるため、通常視点では線の重なり・落差はほぼ見えない。
 ##    Tabの「真横」視点で赤・黄・緑の線の一致/ズレを見る。精密な差は数値パネルで。
 
 const COL_AIM := Color(0.25, 1.0, 0.35)     # 緑：レティクルの狙点
-const COL_REAL := Color(1.0, 0.25, 0.2)     # 赤：実弾（ゴースト含む）
+const COL_REAL := Color(1.0, 0.25, 0.2)     # 赤：実弾（発射時に一括シミュレート）
 const COL_REPLAY := Color(1.0, 0.9, 0.2)    # 黄：リプレイ弾
 const RAY_MASK := 0b1111                    # 地形1+ボディ2+ヘッド4+乗り物8
 const VIEW_NAMES := ["normal", "side", "impact"]
@@ -47,7 +47,6 @@ var _replay_pts := PackedVector3Array()     # リプレイ弾が通った点列
 var _replay_from := Vector3.ZERO
 var _replay_to := Vector3.ZERO
 var _has_replay := false
-var _bullet: Bullet = null                  # 追跡中の実弾（ゴースト含む）
 
 
 func _ready() -> void:
@@ -117,17 +116,40 @@ func on_fire(eye: Vector3, raw_dir: Vector3, assisted: bool) -> void:
 		_set_view(0)  # 新しい1発は通常視点から（前の弾の視点位置が残らないように）
 
 
-## 実弾（またはゴースト実弾）の軌跡追跡を開始。着弾点はhitシグナルで確定する
-func track_bullet(b: Bullet) -> void:
+## 実弾の弾道を発射の瞬間に一括シミュレートして赤線として記録する。
+## bullet.gd とまったく同じ計算（Ballistics.step・dt=1/60・移動区間のセグメントレイ・
+## 同じ判定マスク）なので、結果は実際に飛ぶ実弾と同一。
+## ※ 以前は「ゴースト実弾」を実時間で飛ばして記録していたが、長距離＋リプレイの
+##   スローモーション中は赤線が伸びきるまで10秒以上かかり「赤が見えない」状態に
+##   なったため、待ち時間ゼロのその場シミュレートに変更（2026-07-10）
+func simulate_real(start: Vector3, velocity: Vector3, wind_accel: Vector3) -> void:
 	if not enabled:
 		return
-	_bullet = b
-	_real_pts.append(b.global_position)
-	b.hit.connect(func(result: Dictionary) -> void:
-		_real_impact = result.position
-		_real_pts.append(result.position)
-		_has_real_impact = true
-		_add_marker(result.position, "REAL", COL_REAL, 1.2))
+	const DT := 1.0 / 60.0      # bullet.gd の物理フレームと同じ刻み
+	const LIFETIME := 5.0       # bullet.gd と同じ寿命
+	var space := get_world_3d().direct_space_state
+	var pos := start
+	var vel := velocity
+	var t := 0.0
+	_real_pts.append(pos)
+	while t < LIFETIME:
+		var r := Ballistics.step(pos, vel, wind_accel, DT)
+		var next: Vector3 = r[0]
+		vel = r[1]
+		var query := PhysicsRayQueryParameters3D.create(pos, next, RAY_MASK)
+		query.collide_with_areas = true
+		var result := space.intersect_ray(query)
+		if result:
+			_real_impact = result.position
+			_real_pts.append(result.position)
+			_has_real_impact = true
+			_add_marker(result.position, "REAL", COL_REAL, 1.2)
+			return
+		pos = next
+		_real_pts.append(pos)
+		if pos.y < -10.0:
+			return  # 何にも当たらず落下限界（bullet.gdの消滅条件と同じ）
+		t += DT
 
 
 ## リプレイ（バレットカム）開始：確定弾道の始点・終点を記録して黄マーカーを置く
@@ -142,16 +164,6 @@ func on_replay(from: Vector3, to: Vector3) -> void:
 
 
 # ---------------------------------------------------------------- 毎フレーム処理
-
-func _physics_process(_delta: float) -> void:
-	# 実弾の位置サンプリング（弾は毎物理フレーム自前積分で動く）
-	if _bullet != null and is_instance_valid(_bullet):
-		var p := _bullet.global_position
-		if _real_pts.is_empty() or _real_pts[_real_pts.size() - 1].distance_to(p) > 0.05:
-			_real_pts.append(p)
-	elif _bullet != null:
-		_bullet = null  # 消滅済み
-
 
 func _process(_delta: float) -> void:
 	if not enabled:
@@ -227,8 +239,6 @@ func _update_panel() -> void:
 		var side := Vector2(off.x, off.z).length()
 		drop = -off.y
 		lines.append("REAL   DROP:%+.2fm SIDE:%.2fm  %s" % [drop, side, _fmt(_real_impact)])
-	elif _bullet != null and is_instance_valid(_bullet):
-		lines.append("REAL   flying... (%d pts)" % _real_pts.size())
 	else:
 		lines.append("REAL   -")
 	var gap := -1.0
@@ -359,5 +369,4 @@ func _clear_shot() -> void:
 	_has_real_impact = false
 	_replay_pts = PackedVector3Array()
 	_has_replay = false
-	_bullet = null
 	_mesh.clear_surfaces()

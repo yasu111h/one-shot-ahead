@@ -314,8 +314,10 @@ func _do_fire() -> void:
 	# 弾道予測には民間人も混ぜる。手前に立たれていたら悪人への命中は「確定」しない
 	var infos := _target_infos()
 	var predicted := _predict(start, dir, infos)
-	# 弾道デバッグ（F3）：この1発の「レティクルが指していた点」を記録（照準補正は廃止済み＝常に素の狙い）
+	# 弾道デバッグ（F3）：この1発の「レティクルが指していた点」と、実弾と同一の
+	# 積分・当たり判定で一括シミュレートした実弾道（赤線）をその場で記録
 	debug.on_fire(cam.global_position, dir, false)
+	debug.simulate_real(start, dir * muzzle_speed, wind_accel)
 	# 撃ち味（反動・マズルフラッシュ・レティクル開き・発射音）
 	rig.kick()
 	fx.muzzle_flash(start)
@@ -324,16 +326,12 @@ func _do_fire() -> void:
 	# 悪人への命中確定弾だけがバレットカムになる（民間人への誤射は演出せず実弾で見せる）
 	if not predicted.is_empty() and predicted.target.hostile and _killcam_cd <= 0.0:
 		_killcam_cd = KILLCAM_COOLDOWN
-		if debug.enabled:
-			_spawn_ghost_bullet(start, dir)  # リプレイ弾道と比較する記録専用の実弾
 		_start_replay(start, predicted, dir)
 		return
 	# ミス弾（何にも当たらない弾）も、設定ONならバレットカムで見送る
 	# （クールダウンは命中と共通。誤射＝民間人命中の予測弾は従来どおり実弾で見せる）
 	if predicted.is_empty() and Settings.miss_replay_enabled and _killcam_cd <= 0.0:
 		_killcam_cd = KILLCAM_COOLDOWN
-		if debug.enabled:
-			_spawn_ghost_bullet(start, dir)
 		_start_miss_replay(start, dir)
 		return
 	# 通常弾：実弾（Ballisticsの毎フレーム積分。既定は直線・等速）を飛ばし、
@@ -348,20 +346,6 @@ func _do_fire() -> void:
 	bullet.glass_hit.connect(_on_bullet_glass)
 	bullets_in_flight += 1
 	fx.attach_tracer(bullet)
-	debug.track_bullet(bullet)  # 弾道デバッグ：実弾の軌跡を赤線で記録
-
-
-## 弾道デバッグ用のゴースト実弾：ダメージも勝敗判定も持たず軌跡の記録だけを行う。
-## 命中確定弾・ミスリプレイ弾は実弾を飛ばさない設計のため、リプレイ弾道（黄線）と
-## 物理積分の実弾道（赤線）が一致するかをこれで比較できるようにする。
-func _spawn_ghost_bullet(start: Vector3, dir: Vector3) -> void:
-	var ghost := Bullet.new()
-	add_child(ghost)
-	ghost.global_position = start
-	ghost.velocity = dir * muzzle_speed
-	ghost.wind_accel = wind_accel
-	# stageのhit/vanishedには繋がない＝ゲームへの影響ゼロ（bullets_in_flightにも数えない）
-	debug.track_bullet(ghost)
 
 
 ## 生きている標的の弾道予測用スナップショット
