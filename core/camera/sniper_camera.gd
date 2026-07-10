@@ -62,6 +62,11 @@ func set_view_limits(yaw_min_deg: float, yaw_max_deg: float,
 	_pitch_node.rotation.x = _pitch
 
 
+## 現在の上下角(rad・上が正)。主人公アバターが上半身と銃をこれに追従させる
+func get_aim_pitch() -> float:
+	return _pitch
+
+
 ## ドラッグによる視点回転。感度はFOVに比例＋スコープ中は×0.55（TABIJI準拠）
 func add_aim_delta(rel: Vector2) -> void:
 	var sens := base_sens * lerpf(1.0, scope_sens_mult, aim_blend) * (camera.fov / BASE_FOV)

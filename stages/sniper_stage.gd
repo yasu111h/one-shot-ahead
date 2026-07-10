@@ -290,6 +290,8 @@ func _physics_process(delta: float) -> void:
 	# バレットカム上映中は「角で構える姿」が画に入るので表示したままにする
 	if girl != null:
 		girl.visible = rig.aim_blend < 0.5 or is_replay_active()
+		# 上下の狙いに合わせて上半身と銃口を向ける（左右はリグの回転で追従済み）
+		girl.set_aim_pitch(rig.get_aim_pitch())
 	# 照準減速(スティッキーエイム)の更新。空間クエリを使うので物理フレームで計算し、
 	# 入力イベント側はこのキャッシュ値を使う。減速ゾーン内はレティクル中心点が控えめに色づく
 	# （旧オートエイムの「オレンジ＝撃てば当たる」保証ではない。当てるのはプレイヤー自身）

@@ -35,8 +35,8 @@ func _rig_position() -> Vector3:
 
 
 func _configure_rig() -> void:
-	# 角から埠頭を見渡せる扇形だけに視点を制限
-	rig.set_view_limits(-38.0, 42.0, -32.0, 10.0)
+	# 角から埠頭を見渡せる扇形だけに視点を制限（上はクレーンや上層まで見上げられる）
+	rig.set_view_limits(-38.0, 42.0, -32.0, 38.0)
 
 
 func _mission_text() -> String:

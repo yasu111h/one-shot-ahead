@@ -21,7 +21,13 @@ const BODY_ANGLE_DEG := 28.0
 ## 「右手の実測位置に置き、常に正面を向ける」方式にする（三人称の見た目専用）
 const GUN_POS := Vector3(0.15, 1.20, -0.15)
 
+## 上下の狙いで体を折る支点（girlローカル・みぞおち付近）。
+## 銃はここを中心に回すので、上半身の骨を同じ支点で曲げれば手と銃がずれない
+const TORSO_PIVOT := Vector3(0.05, 1.12, -0.05)
+
 var _skel: Skeleton3D
+var _torso: Node3D          # 銃をぶら下げる支点（ピッチで回す）
+var _bend: TorsoBend        # 上半身の骨を曲げるモディファイア
 
 
 func _ready() -> void:
@@ -47,6 +53,10 @@ func _ready() -> void:
 		lib.add_animation("IdleAim", aim)
 		ap.play("IdleAim")
 	_build_gun()
+	# 上半身を曲げるモディファイア（アニメの後に適用される）
+	_bend = TorsoBend.new()
+	_bend.body_ref = self
+	_skel.add_child(_bend)
 
 
 ## FBXを一時的に実体化し、そのMixamoアニメをVRM骨格用にベイクして返す（TABIJI方式）
@@ -68,12 +78,27 @@ func _bake_from_fbx(path: String, tgt_skel: Skeleton3D) -> Animation:
 
 # ---------------------------------------------------------------- 銃（スナイパーライフル）
 
-## ライフルを体基準で右手の位置に固定する（バレルは常にリグの正面-Zを向く）
+## ライフルを「みぞおちの支点」にぶら下げる。支点をピッチで回すと、銃口が
+## 狙っている方向（＝視線）へ一緒に向く（バレルは支点が水平なとき正面-Z）
 func _build_gun() -> void:
+	_torso = Node3D.new()
+	_torso.name = "TorsoPivot"
+	_torso.position = TORSO_PIVOT
+	add_child(_torso)
 	var gun := _make_rifle()
-	gun.position = GUN_POS
+	gun.position = GUN_POS - TORSO_PIVOT
 	gun.rotation.y = PI   # モデルのバレルは+Z向きなので正面(-Z)へ回す
-	add_child(gun)
+	_torso.add_child(gun)
+
+
+## 上下の狙い(rad・上が正)を受け取り、銃と上半身をそこへ向ける。
+## ステージが毎フレーム rig.get_aim_pitch() を渡す
+func set_aim_pitch(pitch: float) -> void:
+	# girlローカルの前方は-Z。+XまわりにpitchだけまわすとFORWARDが上を向く
+	if _torso != null:
+		_torso.rotation.x = pitch
+	if _bend != null:
+		_bend.pitch = pitch
 
 
 ## スナイパーライフルの仮モデル（箱の組み合わせ・バレルはローカル+Z方向）
