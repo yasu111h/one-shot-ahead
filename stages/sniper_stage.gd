@@ -22,7 +22,7 @@ const WIND_FACTOR := 0.6  # 風速(m/s)→弾への加速度(m/s^2)係数
 const RANGE_MASK := 0b1111
 const TERRAIN_MASK := 0b0001
 const GLASS_MASK := 0b10000  # 窓ガラス(レイヤ5)。割れるだけで弾は逸れない・止まらない
-const KILLCAM_COOLDOWN := 3.0  # バレットカムの再発動までの最短間隔(秒)
+# バレットカムのクールダウンは廃止（2026-07-10ユーザー決定：対象弾は毎回リプレイする）
 
 @export var muzzle_speed := 300.0  # 弾速 m/s（可変）
 @export var max_ammo := 100
@@ -54,7 +54,6 @@ var girl_offset := Vector3(-0.55, -1.8, -1.0)
 
 var _walkers: Array = []  # {follow: PathFollow3D, target: Node, speed: float, dir: float}
 var _pending_fire := false
-var _killcam_cd := 0.0
 var _cam_touch_index := -1
 var _is_touch := false
 var _stick_factor := 1.0  # 照準減速の現在値(物理フレームごとに更新。1.0=減速なし)
@@ -272,7 +271,6 @@ func request_fire() -> void:
 
 
 func _physics_process(delta: float) -> void:
-	_killcam_cd = maxf(_killcam_cd - delta, 0.0)
 	# 歩行標的のPath3D追従（往復）
 	for w in _walkers:
 		if not w.target.alive:
@@ -323,15 +321,13 @@ func _do_fire() -> void:
 	fx.muzzle_flash(start)
 	hud.on_shot()
 	sfx.play_shot()
-	# 悪人への命中確定弾だけがバレットカムになる（民間人への誤射は演出せず実弾で見せる）
-	if not predicted.is_empty() and predicted.target.hostile and _killcam_cd <= 0.0:
-		_killcam_cd = KILLCAM_COOLDOWN
+	# 悪人への命中確定弾は毎回バレットカムになる（民間人への誤射は演出せず実弾で見せる）
+	if not predicted.is_empty() and predicted.target.hostile:
 		_start_replay(start, predicted, dir)
 		return
 	# ミス弾（何にも当たらない弾）も、設定ONならバレットカムで見送る
-	# （クールダウンは命中と共通。誤射＝民間人命中の予測弾は従来どおり実弾で見せる）
-	if predicted.is_empty() and Settings.miss_replay_enabled and _killcam_cd <= 0.0:
-		_killcam_cd = KILLCAM_COOLDOWN
+	# （誤射＝民間人命中の予測弾は従来どおり実弾で見せる）
+	if predicted.is_empty() and Settings.miss_replay_enabled:
 		_start_miss_replay(start, dir)
 		return
 	# 通常弾：実弾（Ballisticsの毎フレーム積分。既定は直線・等速）を飛ばし、
