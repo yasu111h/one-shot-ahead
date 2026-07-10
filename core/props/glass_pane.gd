@@ -63,6 +63,8 @@ func shatter(hit_pos: Vector3, dir: Vector3) -> void:
 	if broken:
 		return
 	broken = true
+	if _pane == null:
+		_ready()   # ツリー追加直後(_ready前)に割られても安全に(動的スポーン対応)
 	_pane.visible = false
 	_col.set_deferred("disabled", true)
 	set_deferred("monitorable", false)

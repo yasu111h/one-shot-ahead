@@ -416,8 +416,12 @@ func _start_miss_replay(start: Vector3, dir: Vector3) -> void:
 	_schedule_replay_glass(start, point)
 	bullet_cam.play(start, point, func() -> void:
 		if grounded:
-			fx.impact_burst(point, normal)
-			_spawn_impact_dust(point)
+			# ビルの窓(シェーダ描き)ならガラス割れ演出。それ以外は土煙
+			if WindowBreak.try_break(self, point, normal, dir):
+				sfx.play_glass()
+			else:
+				fx.impact_burst(point, normal)
+				_spawn_impact_dust(point)
 		hud.show_miss_stamp())
 
 
@@ -574,9 +578,12 @@ func _on_bullet_hit(result: Dictionary, bullet: Bullet) -> void:
 	if collider and collider.has_meta("target_root"):
 		_handle_target_hit(result, bullet)
 	else:
-		# 地形に着弾：フレア＋土煙
-		fx.impact_burst(result.position, normal)
-		_spawn_impact_dust(result.position)
+		# ビルの窓(シェーダ描き)ならガラス割れ演出。それ以外は地形着弾のフレア＋土煙
+		if WindowBreak.try_break(self, result.position, normal, bullet.velocity.normalized()):
+			sfx.play_glass()
+		else:
+			fx.impact_burst(result.position, normal)
+			_spawn_impact_dust(result.position)
 		_check_end()
 
 
