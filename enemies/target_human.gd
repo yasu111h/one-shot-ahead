@@ -3,8 +3,8 @@ extends RigidBody3D
 ## 人型プレースホルダ標的（カプセル胴体＋球の頭）
 ## 通常は freeze=true の静的ボディ。命中時に物理へ切替えて倒れる
 ##
-## hostile=false は民間人。撃つべきでない相手なので、オートエイムは吸い付かず、
-## バレットカムも発動しない。撃ってしまうとミッション失敗（SniperStage._fail）。
+## hostile=false は民間人。撃つべきでない相手なので、照準減速（スティッキーエイム）は
+## 反応せず、バレットカムも発動しない。撃ってしまうとミッション失敗（SniperStage._fail）。
 
 signal died(target: TargetHuman)
 
@@ -27,7 +27,7 @@ func _ready() -> void:
 	collision_mask = 0b0001   # 地形とだけ衝突（倒れる用）
 	set_meta("target_root", self)
 	set_meta("part", "body")
-	add_to_group("target_part")  # オートエイム対象（グループ＋meta "part" 契約）
+	add_to_group("target_part")  # 照準減速の対象（グループ＋meta "part" 契約）
 	_build_body()
 	_prev_pos = global_position
 
@@ -72,7 +72,7 @@ func _build_body() -> void:
 	head_area.monitorable = true
 	head_area.set_meta("target_root", self)
 	head_area.set_meta("part", "head")
-	head_area.add_to_group("target_part")  # オートエイムはヘッドにも吸い付く
+	head_area.add_to_group("target_part")  # 照準減速はヘッド付近でも効く
 	var head_col := CollisionShape3D.new()
 	var head_shape := SphereShape3D.new()
 	head_shape.radius = 0.2

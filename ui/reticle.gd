@@ -13,12 +13,16 @@ const DOT_OUTLINE := 3.6                      # 中心点の縁取り半径
 
 
 ## 中央の十字(4本のティック＋中心点)を、縁取り付きで描く。
-##  ci   : 描画先(CanvasItem。draw中に呼ぶ)
-##  c    : 画面中央
-##  gap  : 中心から各ティックが始まるまでの空き
-##  tick : ティックの長さ
-##  core : 芯の色(通常は白、ロック時はオレンジ等)
-static func draw_cross(ci: CanvasItem, c: Vector2, gap: float, tick: float, core: Color) -> void:
+##  ci       : 描画先(CanvasItem。draw中に呼ぶ)
+##  c        : 画面中央
+##  gap      : 中心から各ティックが始まるまでの空き
+##  tick     : ティックの長さ
+##  core     : 芯の色(通常は白)
+##  dot_core : 中心点だけ別の色にしたい時に指定(照準減速ゾーンの控えめな合図など)。
+##             省略(アルファ0)なら core と同色
+static func draw_cross(ci: CanvasItem, c: Vector2, gap: float, tick: float, core: Color,
+		dot_core := Color(0, 0, 0, 0)) -> void:
+	var dot := dot_core if dot_core.a > 0.0 else core
 	var dirs := [Vector2.RIGHT, Vector2.LEFT, Vector2.UP, Vector2.DOWN]
 	# 先に4本すべての縁取りを描く(隣の芯を縁取りが上書きしないよう順序を分ける)
 	for d: Vector2 in dirs:
@@ -27,7 +31,7 @@ static func draw_cross(ci: CanvasItem, c: Vector2, gap: float, tick: float, core
 	ci.draw_circle(c, DOT_OUTLINE, OUTLINE)
 	for d: Vector2 in dirs:
 		ci.draw_line(c + d * gap, c + d * (gap + tick), core, CORE_W, true)
-	ci.draw_circle(c, DOT_CORE, core)
+	ci.draw_circle(c, DOT_CORE, dot)
 
 
 ## 命中マーカー(斜め4本)。こちらも縁取り付きで背景に負けないようにする。
