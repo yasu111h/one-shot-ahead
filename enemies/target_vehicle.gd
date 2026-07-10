@@ -24,7 +24,7 @@ func _ready() -> void:
 	collision_mask = 0b0001
 	set_meta("target_root", self)
 	set_meta("part", "body")
-	add_to_group("target_part")  # オートエイム対象（グループ＋meta "part" 契約）
+	add_to_group("target_part")  # 照準減速の対象（グループ＋meta "part" 契約）
 	# コリジョン（箱）
 	var col := CollisionShape3D.new()
 	var shape := BoxShape3D.new()

@@ -10,8 +10,8 @@ const GRAVITY := Vector3(0.0, -9.8, 0.0)
 ## 「リプレイの終点」が原理的に同一直線上に乗り、ズレが消える。
 ## 弾速300m/sの飛行時間はそのまま＝動く標的へのリード（偏差撃ち）は生きる。
 ## 将来リアル弾道（重力落下・風流され）を復活させる場合は true に戻すだけでよい。
-## 実弾(bullet.gd)・着弾予測・オートエイムの弾道解がすべて effective_accel() を
-## 参照するため、切り替えても三者の整合は保たれる。
+## 実弾(bullet.gd)・着弾予測がともに effective_accel() を参照するため、
+## 切り替えても両者の整合は保たれる。
 const GRAVITY_ENABLED := false
 const WIND_ENABLED := false
 

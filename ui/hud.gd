@@ -1,7 +1,8 @@
 class_name Hud
 extends CanvasLayer
 ## HUD：残弾・風・測距・操作ボタン・距離スタンプ・CLEAR/RETRY
-## ＋動的レティクル（bloom開閉・ロック色変化・ヒットマーカー。TABIJIのcombat_hud.gd方式）
+## ＋動的レティクル（bloom開閉・照準減速ゾーンの中心点色変化・ヒットマーカー。
+##   TABIJIのcombat_hud.gd方式）
 
 const STAMP_HIT_COLOR := Color(0.95, 0.85, 0.5)   # 命中スタンプ（華やかな金色）
 const STAMP_MISS_COLOR := Color(0.6, 0.62, 0.65)  # MISSスタンプ（グレー系で差別化）
@@ -219,9 +220,10 @@ func show_hitmark(part: String) -> void:
 	_reticle.hitmark_head = (part == "head")
 
 
-## オートエイムが標的を捉えた/外した（レティクル色 白⇄オレンジ）
-func set_locked(locked: bool) -> void:
-	_reticle.locked = locked
+## 照準減速ゾーンに入った/出た（レティクル中心点だけ控えめに色づく。
+## 旧オートエイムの「オレンジ＝撃てば当たる」保証ではないため、十字は白のまま）
+func set_sticky(active: bool) -> void:
+	_reticle.sticky = active
 
 
 ## 距離スタンプ表示（例:「342m HIT」「512m HEADSHOT」）
@@ -261,17 +263,18 @@ func show_fail(msg: String) -> void:
 
 ## 動的レティクル（TABIJIのcombat_hud.gd:56-77を移植）
 ## 中心点常時＋十字ティック。ギャップ=(スコープ7:通常11)+bloom*12
-## bloomは1発+0.45・4.0/s回復。ロックでオレンジ。命中で斜め4本のヒットマーカー
+## bloomは1発+0.45・4.0/s回復。照準減速ゾーン内は中心点だけ控えめにオレンジ。
+## 命中で斜め4本のヒットマーカー
 class DynamicReticle:
 	extends Control
 
 	const Reticle := preload("res://ui/reticle.gd")
 	const COL_RETICLE := Color(1.0, 1.0, 1.0, 0.9)
-	const COL_LOCKED := Color(1.0, 0.42, 0.28, 0.95)   # オートエイムが標的を捉えた時
+	const COL_STICKY_DOT := Color(1.0, 0.62, 0.3, 0.95)  # 減速ゾーン内の中心点(控えめ)
 	const HITMARK_TIME := 0.16
 
 	var scoped := false
-	var locked := false
+	var sticky := false          # 照準減速ゾーン内か(命中保証の意味はない)
 	var bloom := 0.0             # 連射でレティクルが開く量(0〜1)
 	var hitmark_t := 0.0         # ヒットマーカーの残り表示時間
 	var hitmark_head := false    # ヘッドショットか(色を変える)
@@ -285,9 +288,10 @@ class DynamicReticle:
 
 	func _draw() -> void:
 		var c := size * 0.5
-		var col := COL_LOCKED if locked else COL_RETICLE
 		var gap := (7.0 if scoped else 11.0) + bloom * 12.0
-		Reticle.draw_cross(self, c, gap, 9.0, col)
+		# 十字は常に白。減速ゾーン内は中心点だけ色づく（結果はヒットマーカーで示す）
+		var dot := COL_STICKY_DOT if sticky else COL_RETICLE
+		Reticle.draw_cross(self, c, gap, 9.0, COL_RETICLE, dot)
 		# ヒットマーカー(命中の一瞬、斜め4本)。ヘッドショットはオレンジ
 		if hitmark_t > 0.0:
 			var a := hitmark_t / HITMARK_TIME

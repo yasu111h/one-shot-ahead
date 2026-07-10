@@ -1,6 +1,6 @@
 class_name SniperStage
 extends Node3D
-## 狙撃ステージの共通基底。環境・入力・射撃・オートエイム・バレットカム・勝敗を持つ。
+## 狙撃ステージの共通基底。環境・入力・射撃・照準減速・バレットカム・勝敗を持つ。
 ## ステージ固有（見た目・地形・標的配置・狙撃地点）はサブクラスが下記を上書きする:
 ##   _build_environment() … 空・光・フォグ
 ##   _build_world()       … 地形/建物
@@ -14,6 +14,9 @@ extends Node3D
 ##   発射   … 左クリック / FIREボタン（Fキーは予備）
 ##   スコープ … Qキー / SCOPEボタンでトグル巡回（1x→4x→8x→1x）。ホイールで段階±1
 ## ※ 息止めは廃止（照準は常に静止・2026-07-10ユーザー決定）
+## ※ オートエイム（発射方向の吸い付き）は廃止（2026-07-10ユーザー決定）。
+##    弾は常に照準レイどおりに飛ぶ＝当てるのはプレイヤー自身。
+##    代わりに「照準減速（スティッキーエイム・CoD方式）」で標的付近の微調整だけを楽にする
 
 const WIND_FACTOR := 0.6  # 風速(m/s)→弾への加速度(m/s^2)係数
 const RANGE_MASK := 0b1111
@@ -23,12 +26,10 @@ const KILLCAM_COOLDOWN := 3.0  # バレットカムの再発動までの最短�
 @export var muzzle_speed := 300.0  # 弾速 m/s（可変）
 @export var max_ammo := 100
 
-# --- オートエイム(吸い付き)。スナイパー用に狭め。TABIJIの_assist_dir方式 ---
-@export var assist_deg_hip := 2.0      # 腰だめ時の吸い付き角(度)
-@export var assist_deg_scope := 0.6    # スコープ中(狙いやすいので狭め)
-@export var assist_touch_mult := 1.5   # タッチ端末は指で粗いので広めに
-@export var assist_full_range := 600.0   # この距離までは吸い付き全開
-@export var assist_fade_range := 1200.0  # ここで吸い付き0(これ以遠は補正なし)
+# --- 照準減速(スティッキーエイム・CoD方式)。弾は曲げず、敵標的の近くでだけ感度を落とす ---
+@export var stick_angle := 2.5       # 減速ゾーンのしきい角(度)。照準レイと標的の最接近角がこの内側で減速
+@export var stick_slow := 0.35       # 標的中心での感度倍率。ゾーン外縁1.0→中心でこの値へ角度補間
+@export var stick_touch_mult := 1.5  # タッチ端末は指で粗いのでゾーンを広めに
 
 var wind_speed := 0.0
 var wind_accel := Vector3.ZERO
@@ -50,6 +51,7 @@ var _pending_fire := false
 var _killcam_cd := 0.0
 var _cam_touch_index := -1
 var _is_touch := false
+var _stick_factor := 1.0  # 照準減速の現在値(物理フレームごとに更新。1.0=減速なし)
 
 
 func _ready() -> void:
@@ -202,7 +204,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		return
 	if event is InputEventScreenDrag:
 		if event.index == _cam_touch_index and not is_replay_active():
-			rig.add_aim_delta(event.relative)
+			rig.add_aim_delta(event.relative * _stick_factor)  # 照準減速を掛ける
 		return
 	# マウス（Mac用）。タッチ端末で実タッチから合成されるエミュレートマウスだけを
 	# 無視し、実マウスは端末判定に関わらず常に受け付ける
@@ -213,7 +215,7 @@ func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventMouseMotion:
 		# 右ドラッグ＝視点回転（押している間だけ・キャプチャなし）
 		if Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT) and not is_replay_active():
-			rig.add_aim_delta(event.relative)
+			rig.add_aim_delta(event.relative * _stick_factor)  # 照準減速を掛ける
 		return
 	if event is InputEventMouseButton and event.pressed:
 		match event.button_index:
@@ -259,11 +261,13 @@ func _physics_process(delta: float) -> void:
 	if _pending_fire:
 		_pending_fire = false
 		_do_fire()
-	# オートエイムのロック表示（捉えたらレティクルが白→オレンジ）
-	var locked := false
+	# 照準減速(スティッキーエイム)の更新。空間クエリを使うので物理フレームで計算し、
+	# 入力イベント側はこのキャッシュ値を使う。減速ゾーン内はレティクル中心点が控えめに色づく
+	# （旧オートエイムの「オレンジ＝撃てば当たる」保証ではない。当てるのはプレイヤー自身）
+	_stick_factor = 1.0
 	if not game_over and not is_replay_active():
-		locked = _assist_dir(-rig.camera.global_transform.basis.z) != Vector3.ZERO
-	hud.set_locked(locked)
+		_stick_factor = _stick_speed_scale()
+	hud.set_sticky(_stick_factor < 1.0)
 	# 測距（照準先の距離をHUDへ）
 	_update_rangefinder()
 
@@ -273,22 +277,12 @@ func _do_fire() -> void:
 		return
 	ammo -= 1
 	var cam := rig.camera
-	var raw := -cam.global_transform.basis.z
+	# 照準レイ（画面中央）そのままで撃つ。発射方向の補正は一切ない＝当てるのはプレイヤー自身
+	var dir := -cam.global_transform.basis.z
+	var start := cam.global_position + dir * 0.6
 	# 弾道予測には民間人も混ぜる。手前に立たれていたら悪人への命中は「確定」しない
 	var infos := _target_infos()
-	# オートエイム（吸い付き）：捉えていれば弾道を標的へ曲げる
-	var dir := raw
-	var assisted := _assist_dir(raw)
-	if assisted != Vector3.ZERO:
-		dir = assisted
-	var start := cam.global_position + dir * 0.6
 	var predicted := _predict(start, dir, infos)
-	# 吸い付きが弾を民間人へ寄せてしまった場合は補正を捨て、素の狙いで撃つ
-	# （プレイヤーが狙っていない誤射を、こちらの補正で作らない）
-	if assisted != Vector3.ZERO and not predicted.is_empty() and not predicted.target.hostile:
-		dir = raw
-		start = cam.global_position + dir * 0.6
-		predicted = _predict(start, dir, infos)
 	# 撃ち味（反動・マズルフラッシュ・レティクル開き・発射音）
 	rig.kick()
 	fx.muzzle_flash(start)
@@ -400,22 +394,24 @@ func _update_rangefinder() -> void:
 		hud.range_distance = -1.0
 
 
-# ---------------------------------------------------------------- オートエイム(TABIJI移植)
+# ---------------------------------------------------------------- 照準減速(スティッキーエイム)
 
-## オートエイム: 狙い(base)の近くにいる標的部位("target_part"グループ)を探し、
-## 吸い付き角の内なら「その部位に実際に命中する発射方向（弾道解）」を返す。
-## いなければ Vector3.ZERO。部位がカプセルなら中心でなく「芯線上で狙いに最も近い点」へ。
-## ※ 弾道解は Ballistics のフラグに従う。現行の直線弾道では部位への直線方向そのもの。
-##    重力・風（GRAVITY_ENABLED / WIND_ENABLED）を復活させた場合は、飛翔時間ぶんの
-##    ドロップを見込んだ照準解に自動で切り替わり「ロック＝当たる」が維持される。
-## ※ 民間人と、壁の陰にいる標的には吸い付かない（ロック＝当たる、を壊さないため）。
-func _assist_dir(base: Vector3) -> Vector3:
-	var deg := lerpf(assist_deg_hip, assist_deg_scope, rig.aim_blend)
+## 照準減速: 照準レイの近くに「見えている敵標的」がいる間だけドラッグ感度を落とし、
+## 標的付近の微調整をやりやすくする（CoD方式）。戻り値はドラッグ入力に掛ける倍率。
+## 照準を勝手に動かす・発射方向を曲げることは一切しない＝入力の効きを弱めるだけ。
+## 判定は「照準レイと標的部位の最接近角」。しきい角 stick_angle の外なら1.0（減速なし）、
+## 外縁で1.0→標的中心（角度0）で stick_slow へ角度に応じて線形補間する。
+## ※ 民間人では減速しない。減速は弾を曲げないので誤射は作らないが、
+##    民間人に照準が「粘る」感触自体が誤誘導になるため（減速＝敵の合図に統一）。
+## ※ 壁・床の陰で見えていない標的も対象外（旧オートエイムの可視判定を流用）。
+func _stick_speed_scale() -> float:
+	var deg := stick_angle
 	if _is_touch:
-		deg *= assist_touch_mult
-	var best_ang := deg_to_rad(deg)
-	var best := Vector3.ZERO
+		deg *= stick_touch_mult
+	var limit := deg_to_rad(deg)
+	var best := limit
 	var eye := rig.camera.global_position
+	var base := -rig.camera.global_transform.basis.z
 	for n in get_tree().get_nodes_in_group("target_part"):
 		if not (n is Node3D) or not is_instance_valid(n) or not n.is_inside_tree():
 			continue
@@ -423,26 +419,15 @@ func _assist_dir(base: Vector3) -> Vector3:
 		if root == null or not is_instance_valid(root) or not root.alive or not root.hostile:
 			continue
 		var point := _aim_point(n, eye, base)
-		var d := (point - eye).length()
-		# 距離が遠いほど吸い付き角を細くする。assist_fade_range 以遠は補正なし
-		var range_k := clampf(
-			1.0 - (d - assist_full_range) / (assist_fade_range - assist_full_range), 0.0, 1.0)
-		if range_k <= 0.0:
-			continue
-		var eff_ang := deg_to_rad(deg) * range_k
-		# 弾道補正：飛翔時間ぶんのドロップを見込んだ照準点。
-		# Ballistics のフラグに従う（直線弾道＝実効加速度ゼロなら補正なし＝部位そのもの）
-		var tf := d / muzzle_speed
-		var solution := point - Ballistics.effective_accel(wind_accel) * (0.5 * tf * tf)
-		var to := solution - eye
-		var ang := base.angle_to(to.normalized())
-		if ang >= eff_ang or ang >= best_ang:
+		var ang := base.angle_to(point - eye)
+		if ang >= best:
 			continue
 		if _blocked_by_terrain(eye, point):
-			continue  # 壁・床の陰。見えていない標的には吸い付かせない
-		best_ang = ang
-		best = to.normalized()
-	return best
+			continue  # 壁・床の陰。見えていない標的では減速しない
+		best = ang
+	if best >= limit:
+		return 1.0
+	return lerpf(stick_slow, 1.0, best / limit)
 
 
 ## 視線が地形（レイヤ1）で遮られているか
