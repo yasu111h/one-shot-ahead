@@ -346,14 +346,14 @@ class DynamicReticle:
 			Reticle.draw_hitmark(self, c, hcol)
 
 
-## 標的マーカー：生存標的の頭上に▼＋距離ラベルを常時表示する2Dオーバーレイ。
-## 「標的がどこにいるか」を一目で分かるようにする（背景に沈まないよう縁取り付き）
+## 標的マーカー：生存標的の頭上に▼を常時表示する2Dオーバーレイ。
+## 「標的がどこにいるか」を一目で分かるようにする（背景に沈まないよう縁取り付き）。
+## 距離のm表示は廃止（2026-07-10ユーザー決定。距離は画面中央の測距表示で足りる）
 class TargetMarkers:
 	extends Control
 
 	const COL := Color(1.0, 0.30, 0.22, 0.95)
 	const COL_OUTLINE := Color(0.0, 0.0, 0.0, 0.8)
-	const FONT_SIZE := 13
 	const MARKER_HEIGHT := 2.2   # 標的原点からマーカーまでの高さ(m)
 
 	var stage: SniperStage
@@ -368,7 +368,6 @@ class TargetMarkers:
 		if stage == null or rig == null or rig.camera == null:
 			return
 		var cam: Camera3D = rig.camera
-		var font := ThemeDB.fallback_font
 		for t in stage.hostiles:
 			if not is_instance_valid(t) or not t.alive or not t.is_inside_tree():
 				continue
@@ -385,13 +384,3 @@ class TargetMarkers:
 				sp + Vector2(-10, -16), sp + Vector2(10, -16), sp + Vector2(0, 1)])
 			draw_colored_polygon(tri_o, COL_OUTLINE)
 			draw_colored_polygon(tri, COL)
-			# 距離ラベル（▼の上・中央寄せ）
-			var dist := int(round(cam.global_position.distance_to(t.global_position)))
-			var text := "%dm" % dist
-			var ts := font.get_string_size(
-				text, HORIZONTAL_ALIGNMENT_CENTER, -1, FONT_SIZE)
-			var tp := sp + Vector2(-ts.x * 0.5, -20)
-			draw_string_outline(font, tp, text,
-				HORIZONTAL_ALIGNMENT_LEFT, -1, FONT_SIZE, 4, COL_OUTLINE)
-			draw_string(font, tp, text,
-				HORIZONTAL_ALIGNMENT_LEFT, -1, FONT_SIZE, COL)
