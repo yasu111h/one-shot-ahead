@@ -13,7 +13,7 @@ extends Node3D
 ##   視点   … 右ドラッグ（PC）/ 画面右側ドラッグ（タッチ・1本指追跡）
 ##   発射   … 左クリック / FIREボタン（Fキーは予備）
 ##   スコープ … Qキー / SCOPEボタンでトグル巡回（1x→4x→8x→1x）。ホイールで段階±1
-##   息止め … スペース長押し / BREATHボタン（スコープ中のみ）
+## ※ 息止めは廃止（照準は常に静止・2026-07-10ユーザー決定）
 
 const WIND_FACTOR := 0.6  # 風速(m/s)→弾への加速度(m/s^2)係数
 const RANGE_MASK := 0b1111
@@ -223,11 +223,6 @@ func _unhandled_input(event: InputEvent) -> void:
 			KEY_Q:
 				if event.pressed:
 					rig.cycle_zoom()  # Q＝スコープトグル（1x→4x→8x→1x）
-			KEY_SPACE:
-				if event.pressed:
-					rig.start_breath()  # スペース長押し＝息止め（スコープ中のみ）
-				else:
-					rig.stop_breath()
 			KEY_F:
 				if event.pressed:
 					request_fire()  # 予備の発射キー
