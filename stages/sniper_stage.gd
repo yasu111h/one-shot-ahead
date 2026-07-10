@@ -44,6 +44,7 @@ var bullet_cam: BulletCam
 var fx: ShotFx
 var sfx: SfxBank
 var hud: Hud
+var debug: TrajectoryDebug  # 弾道検証デバッグ（F3でON/OFF・デバッグビルド専用）
 
 var _walkers: Array = []  # {follow: PathFollow3D, target: Node, speed: float, dir: float}
 var _pending_fire := false
@@ -63,6 +64,7 @@ func _ready() -> void:
 	_build_cameras()
 	_build_fx()
 	_build_hud()
+	_build_debug()
 
 
 # ---------------------------------------------------------------- サブクラスの差し替え点
@@ -178,6 +180,12 @@ func _build_hud() -> void:
 	add_child(hud)
 
 
+func _build_debug() -> void:
+	debug = TrajectoryDebug.new()
+	debug.stage = self
+	add_child(debug)
+
+
 ## HUD左上に出すミッション文（サブクラスが上書き。空なら非表示）
 func _mission_text() -> String:
 	return ""
@@ -232,6 +240,12 @@ func _unhandled_input(event: InputEvent) -> void:
 			KEY_F:
 				if event.pressed:
 					request_fire()  # 予備の発射キー
+			KEY_F3:
+				if event.pressed and OS.is_debug_build:
+					debug.toggle_enabled()  # F3＝弾道デバッグ表示ON/OFF
+			KEY_TAB:
+				if event.pressed and OS.is_debug_build:
+					debug.cycle_view()  # Tab＝デバッグ視点切替（通常→真横→着弾点）
 
 
 # ---------------------------------------------------------------- 射撃
@@ -289,6 +303,8 @@ func _do_fire() -> void:
 		dir = raw
 		start = cam.global_position + dir * 0.6
 		predicted = _predict(start, dir, infos)
+	# 弾道デバッグ（F3）：この1発の「レティクルが指していた点」を記録
+	debug.on_fire(cam.global_position, raw, dir != raw)
 	# 撃ち味（反動・マズルフラッシュ・レティクル開き・発射音）
 	rig.kick()
 	fx.muzzle_flash(start)
@@ -297,12 +313,16 @@ func _do_fire() -> void:
 	# 悪人への命中確定弾だけがバレットカムになる（民間人への誤射は演出せず実弾で見せる）
 	if not predicted.is_empty() and predicted.target.hostile and _killcam_cd <= 0.0:
 		_killcam_cd = KILLCAM_COOLDOWN
+		if debug.enabled:
+			_spawn_ghost_bullet(start, dir)  # リプレイ弾道と比較する記録専用の実弾
 		_start_replay(start, predicted, dir)
 		return
 	# ミス弾（何にも当たらない弾）も、設定ONならバレットカムで見送る
 	# （クールダウンは命中と共通。誤射＝民間人命中の予測弾は従来どおり実弾で見せる）
 	if predicted.is_empty() and Settings.miss_replay_enabled and _killcam_cd <= 0.0:
 		_killcam_cd = KILLCAM_COOLDOWN
+		if debug.enabled:
+			_spawn_ghost_bullet(start, dir)
 		_start_miss_replay(start, dir)
 		return
 	# 通常弾：実弾（Ballisticsの毎フレーム積分。既定は直線・等速）を飛ばし、
@@ -316,6 +336,20 @@ func _do_fire() -> void:
 	bullet.vanished.connect(_on_bullet_vanished)
 	bullets_in_flight += 1
 	fx.attach_tracer(bullet)
+	debug.track_bullet(bullet)  # 弾道デバッグ：実弾の軌跡を赤線で記録
+
+
+## 弾道デバッグ用のゴースト実弾：ダメージも勝敗判定も持たず軌跡の記録だけを行う。
+## 命中確定弾・ミスリプレイ弾は実弾を飛ばさない設計のため、リプレイ弾道（黄線）と
+## 物理積分の実弾道（赤線）が一致するかをこれで比較できるようにする。
+func _spawn_ghost_bullet(start: Vector3, dir: Vector3) -> void:
+	var ghost := Bullet.new()
+	add_child(ghost)
+	ghost.global_position = start
+	ghost.velocity = dir * muzzle_speed
+	ghost.wind_accel = wind_accel
+	# stageのhit/vanishedには繋がない＝ゲームへの影響ゼロ（bullets_in_flightにも数えない）
+	debug.track_bullet(ghost)
 
 
 ## 生きている標的の弾道予測用スナップショット
@@ -351,6 +385,7 @@ func _start_replay(start: Vector3, predicted: Dictionary, dir: Vector3) -> void:
 	var tvel: Vector3 = target.velocity_estimate if is_instance_valid(target) else Vector3.ZERO
 	var replay_world_dt: float = BulletCam.SLOWMO * BulletCam.FLIGHT_TIME
 	var to: Vector3 = point - tvel * (predicted.time - replay_world_dt)
+	debug.on_replay(start, to)  # 弾道デバッグ：リプレイ弾道（黄線）の始点・終点を記録
 	bullet_cam.play(start, to, func() -> void:
 		_on_replay_impact(target, to, zone, dir))
 
@@ -364,6 +399,7 @@ func _start_miss_replay(start: Vector3, dir: Vector3) -> void:
 	var point: Vector3 = impact.point
 	var normal: Vector3 = impact.normal
 	var grounded: bool = impact.grounded
+	debug.on_replay(start, point)  # 弾道デバッグ：ミスリプレイ弾道も黄線で記録
 	bullet_cam.play(start, point, func() -> void:
 		if grounded:
 			fx.impact_burst(point, normal)

@@ -188,6 +188,16 @@ func _finish() -> void:
 	finished.emit()
 
 
+## デバッグ用：リプレイ弾が飛翔中か（TrajectoryDebugが軌跡記録に使う）
+func bolt_flying() -> bool:
+	return active and _bolt.visible
+
+
+## デバッグ用：リプレイ弾の現在位置（bolt_flying()がtrueの間のみ有効）
+func bolt_position() -> Vector3:
+	return _bolt.global_position
+
+
 ## 中断(リトライ・シーン切替など)。時間とカメラを必ず正常へ戻す
 func abort() -> void:
 	if not active:

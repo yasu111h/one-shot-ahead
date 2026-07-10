@@ -58,6 +58,9 @@ func _ready() -> void:
 	_hint_label = _make_label(
 		"AIM: R-DRAG / FIRE: L-CLICK / SCOPE: Q or WHEEL",
 		10, Control.PRESET_TOP_LEFT, Vector2(12, 30))
+	if OS.is_debug_build:
+		# 弾道デバッグ（trajectory_debug.gd）の入口をヒントに出す（デバッグビルド限定）
+		_hint_label.text += " / TRAJ DEBUG: F3 (TAB: VIEW)"
 	_hint_label.modulate = Color(1, 1, 1, 0.55)
 	_mission_label = _make_label(mission, 13, Control.PRESET_TOP_LEFT, Vector2(12, 48))
 	_mission_label.modulate = Color(1.0, 0.72, 0.45, 0.95)
