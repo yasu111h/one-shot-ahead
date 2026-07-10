@@ -17,8 +17,21 @@ signal finished
 
 const SLOWMO := 0.08           # リプレイ中の世界の時間倍率(スロー度合い)
 const HOLD_SLOWMO := 0.20      # 着弾後の余韻中は少しだけ時間を進める(標的が倒れるのが見える)
-const FLIGHT_TIME := 1.5       # 発射→着弾の体感時間(実時間・秒)。等速再生・減速演出なし
 const IMPACT_HOLD := 0.7       # 着弾後の余韻(実時間・秒)
+
+# 発射→着弾の体感時間(実時間・秒)。飛行距離にある程度比例させる
+# （近距離はテンポよく、遠距離は「長い旅」を見せる。厳密な比例だと短距離が一瞬・
+#   長距離が間延びするので、基礎時間＋距離係数を上下でクランプする）
+const FLIGHT_BASE := 0.55      # 距離ゼロでも必ずこれだけは飛翔を見せる
+const FLIGHT_PER_M := 0.0048   # 1mあたりの追加秒数（200m≒1.51秒＝従来の体感）
+const FLIGHT_MIN := 0.9        # 近距離でも短すぎない下限
+const FLIGHT_MAX := 2.6        # 遠距離でも間延びしない上限
+
+
+## 飛行距離(m)に対する再生時間(実時間・秒)。ステージ側の同期計算もこれを使う
+static func flight_time_for(distance: float) -> float:
+	return clampf(FLIGHT_BASE + distance * FLIGHT_PER_M, FLIGHT_MIN, FLIGHT_MAX)
+
 const CAM_BACK := 1.3          # 弾の後方距離(実弾は小さいので近めに寄る)
 const CAM_SIDE := 0.5          # 弾の横オフセット
 const CAM_UP := 0.28           # 弾の上オフセット
@@ -44,6 +57,7 @@ var _accel := Vector3.ZERO     # 弾の実効加速度（重力弾道の再生�
 var _ft := 0.0                 # 実飛行時間（ワールド秒）。放物線の形の決定に使う
 var _v0 := Vector3.ZERO        # 初速（from→toへ_ft秒・加速度_accelで届く解）
 var _t := 0.0                  # 飛翔の進行(0..1)
+var _replay_time := FLIGHT_MIN # この1回の再生時間（実時間・秒）。飛行距離で決まる
 var _spin := 0.0               # ライフリング回転の累積角(rad)
 var _hold := 0.0
 var _phase := 0                # 0=待機 1=飛翔 2=着弾余韻
@@ -124,6 +138,7 @@ func play(from: Vector3, to: Vector3, on_impact: Callable = Callable(),
 	_from = from
 	_to = to
 	_dir = seg.normalized()
+	_replay_time = flight_time_for(seg.length())  # 遠い弾ほど長く見せる
 	# 放物線の初速解：to = from + v0*T + 0.5*a*T^2 を v0 について解く。
 	# 加速度ゼロ or 時間なしなら等速直線（従来どおり）
 	if flight_time > 0.001 and accel != Vector3.ZERO:
@@ -154,7 +169,7 @@ func _process(delta: float) -> void:
 	var real_dt := delta / maxf(Engine.time_scale, 0.0001)
 
 	if _phase == 1:
-		_t += real_dt / FLIGHT_TIME
+		_t += real_dt / _replay_time
 		if _t >= 1.0:
 			# 着弾: この瞬間にダメージが入る(着弾FXはスロー中の速度違和感になるので出さない)
 			_bolt.visible = false

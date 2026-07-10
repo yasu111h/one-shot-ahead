@@ -372,10 +372,12 @@ func _start_replay(start: Vector3, predicted: Dictionary, dir: Vector3) -> void:
 	var zone: String = predicted.get("zone", "body")
 	var point: Vector3 = predicted.point
 	# 動く標的の補正：予測着弾点は「実飛翔時間ぶん未来」の位置なので、
-	# リプレイ中に実際へ進む世界時間（SLOWMO×FLIGHT_TIME≒0.12s）の位置へ引き戻す。
+	# リプレイ中に実際へ進む世界時間（SLOWMO×再生時間）の位置へ引き戻す。
 	# これでリプレイの弾は「その瞬間に標的がいる場所」へ命中して見える。
+	# 再生時間は飛行距離で決まるため、ここでも同じ式（flight_time_for）を使う
 	var tvel: Vector3 = target.velocity_estimate if is_instance_valid(target) else Vector3.ZERO
-	var replay_world_dt: float = BulletCam.SLOWMO * BulletCam.FLIGHT_TIME
+	var replay_world_dt: float = BulletCam.SLOWMO \
+		* BulletCam.flight_time_for(start.distance_to(point))
 	var to: Vector3 = point - tvel * (predicted.time - replay_world_dt)
 	debug.on_replay(start, to)  # 弾道デバッグ：リプレイ弾道（黄線）の始点・終点を記録
 	_schedule_replay_glass(start, to)
@@ -542,7 +544,8 @@ func _schedule_replay_glass(from: Vector3, to: Vector3) -> void:
 			return
 		var pane: Object = g.collider
 		var point: Vector3 = g.position
-		var delay: float = from.distance_to(point) / total * BulletCam.FLIGHT_TIME
+		# ガラスが割れる時刻＝リプレイ弾がそこを通過する瞬間（再生時間は飛行距離で決まる）
+		var delay: float = from.distance_to(point) / total * BulletCam.flight_time_for(total)
 		# タイマーはシーンよりも長生きするので、リトライ等で破棄済みなら何もしない
 		get_tree().create_timer(delay, true, false, true).timeout.connect(func() -> void:
 			if not is_instance_valid(self) or not is_instance_valid(pane):
