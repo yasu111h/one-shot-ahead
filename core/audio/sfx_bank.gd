@@ -16,6 +16,7 @@ func _ready() -> void:
 	_s["shot"] = _wav(_gen_shot())
 	_s["hit"] = _wav(_gen_hit())
 	_s["headshot"] = _wav(_gen_headshot())
+	_s["glass"] = _wav(_gen_glass())
 	for i in POOL:
 		var p := AudioStreamPlayer.new()
 		p.bus = "Master"
@@ -36,6 +37,11 @@ func play_hit() -> void:
 ## 命中音（ヘッドショット・別種）
 func play_headshot() -> void:
 	_play("headshot", -3.0, randf_range(0.97, 1.03))
+
+
+## ガラスの割れる音（パリンッ）
+func play_glass() -> void:
+	_play("glass", randf_range(-8.0, -6.0), randf_range(0.92, 1.08))
 
 
 func _play(sfx_name: String, vol_db: float, pitch: float) -> void:
@@ -104,6 +110,28 @@ func _gen_hit() -> PackedFloat32Array:
 		var thud := sin(pt) * exp(-prog * 7.0)
 		var noise := (randf() * 2.0 - 1.0) * 0.25 * exp(-prog * 30.0)
 		out[i] = (thud + noise) * 0.6
+	return out
+
+
+## ガラス割れ: 鋭いクラック＋高音の破片の鳴き（パリンッ）＋こぼれ落ちるきらめき
+func _gen_glass() -> PackedFloat32Array:
+	var dur := 0.45
+	var out := _blank(dur)
+	var freqs := [2350.0, 3150.0, 4200.0, 5300.0, 6100.0]
+	for i in out.size():
+		var prog := float(i) / out.size()
+		var t := float(i) / RATE
+		# 割れた瞬間の鋭いクラック
+		var crack := (randf() * 2.0 - 1.0) * exp(-prog * 40.0) * 0.9
+		# 破片の高い鳴き(複数の高音が別々に減衰＝ガラス特有のリン)
+		var ring := 0.0
+		for k in freqs.size():
+			ring += sin(TAU * freqs[k] * t) * exp(-prog * (9.0 + float(k) * 3.0))
+		ring *= 0.16
+		# 破片がこぼれ落ちるきらめき(粗い明滅ノイズ)
+		var sparkle := (randf() * 2.0 - 1.0) * exp(-prog * 7.0) * 0.18 \
+			* (0.5 + 0.5 * sin(TAU * 90.0 * t))
+		out[i] = (crack + ring + sparkle) * 0.55
 	return out
 
 
