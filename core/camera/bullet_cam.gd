@@ -20,6 +20,11 @@ const IMPACT_HOLD := 0.7       # 着弾後の余韻(実時間・秒)
 const CAM_BACK := 1.3          # 弾の後方距離(実弾は小さいので近めに寄る)
 const CAM_SIDE := 0.5          # 弾の横オフセット
 const CAM_UP := 0.28           # 弾の上オフセット
+# 着弾直前(進行70%→100%)はカメラを後ろ・上へ引いて、標的と破片の舞いを
+# 少し離れた位置から見せる(終着点で寄りすぎて見づらい問題の対策・2026-07-10)
+const END_BACK_EXTRA := 2.4    # 着弾時に追加で引く後方距離
+const END_UP_EXTRA := 0.35     # 着弾時に追加で上げる高さ
+const HOLD_RETREAT := 1.4      # 余韻中にゆっくり後退する速度(m/s・実時間)
 const SWEEP_RAD := 0.9         # 飛翔中にカメラが弾の周りを回り込む角度(rad)
 const SPIN_RATE := 24.0        # 弾のライフリング回転(rad/s・実時間)
 const BAR_RATIO := 0.11        # レターボックス黒帯1本の高さ(画面比)
@@ -147,8 +152,8 @@ func _process(delta: float) -> void:
 			_place(clampf(_t, 0.0, 1.0))
 	elif _phase == 2:
 		_hold -= real_dt
-		# 着弾点をゆっくり見つめたままわずかに引く
-		_cam.global_position += -_dir * real_dt * 0.6
+		# 着弾点をゆっくり見つめたまま引いていく(破片の舞いが画角に収まる)
+		_cam.global_position += -_dir * real_dt * HOLD_RETREAT
 		_look_impact()
 		if _hold <= 0.0:
 			_finish()
@@ -162,10 +167,13 @@ func _place(te: float) -> void:
 	_bolt.look_at(pos + _dir, up)
 	_bolt.rotate_object_local(Vector3.FORWARD, _spin)   # look_at後に累積回転を乗せる
 
-	# カメラ: 弾の斜め後ろから追走し、飛翔中に弾の周りをゆっくり回り込む
+	# カメラ: 弾の斜め後ろから追走し、飛翔中に弾の周りをゆっくり回り込む。
+	# 着弾直前(70%→100%)は後ろ・上へ引き、着弾の瞬間を少し離れて見る
 	var side := _dir.cross(Vector3.UP)
 	side = side.normalized() if side.length() > 0.01 else Vector3.RIGHT
-	var base := -_dir * CAM_BACK + side * CAM_SIDE + Vector3.UP * CAM_UP
+	var pull := smoothstep(0.7, 1.0, te)
+	var base := -_dir * (CAM_BACK + END_BACK_EXTRA * pull) + side * CAM_SIDE \
+		+ Vector3.UP * (CAM_UP + END_UP_EXTRA * pull)
 	var offset := base.rotated(_dir, lerpf(-SWEEP_RAD * 0.3, SWEEP_RAD, te))
 	_cam.global_position = pos + offset
 	_cam.look_at(pos + _dir * 2.0, Vector3.UP)
