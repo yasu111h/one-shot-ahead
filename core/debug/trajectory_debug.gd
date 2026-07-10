@@ -19,6 +19,7 @@ extends Node3D
 const COL_AIM := Color(0.25, 1.0, 0.35)     # 緑：レティクルの狙点
 const COL_REAL := Color(1.0, 0.25, 0.2)     # 赤：実弾（発射時に一括シミュレート）
 const COL_REPLAY := Color(1.0, 0.9, 0.2)    # 黄：リプレイ弾
+const COL_DROP := Color(0.8, 0.88, 1.0, 0.75)  # 白青：狙点レイ→実弾道の落下連結線
 const RAY_MASK := 0b1111                    # 地形1+ボディ2+ヘッド4+乗り物8
 const VIEW_NAMES := ["normal", "side", "impact"]
 const DASH_LEN := 2.0                       # 破線のダッシュ長(m)。赤と黄は位相をずらして交互に見せる
@@ -48,6 +49,8 @@ var _replay_pts := PackedVector3Array()     # リプレイ弾が通った点列
 var _replay_from := Vector3.ZERO
 var _replay_to := Vector3.ZERO
 var _has_replay := false
+var _dev_cache := -1.0                      # PATH DEVの計算キャッシュ（点数が変わった時だけ再計算）
+var _dev_counts := Vector2i(-1, -1)
 
 
 func _ready() -> void:
@@ -202,7 +205,28 @@ func _rebuild_lines() -> void:
 	# ので、1本にしか見えず区別できない問題を解消する（重なり＝一致の証拠が見える）
 	_add_dashed(_real_pts, COL_REAL, 0.0)
 	_add_dashed(_replay_pts, COL_REPLAY, DASH_LEN)
+	# 落下の可視化：狙点レイ→実弾道への縦の連結線（25%刻み）。
+	# 重力ONだと進むほど連結線が長くなる＝「だんだん下へ離れていく」が一目で分かる。
+	# 直線弾道では長さほぼ0で見えない
+	if _real_pts.size() >= 2:
+		_mesh.surface_set_color(COL_DROP)
+		var aim_len := _aim_start.distance_to(_aim_point)
+		for frac in [0.25, 0.5, 0.75, 1.0]:
+			var d: float = aim_len * frac
+			var rp := _real_point_at(d)
+			if rp == Vector3.INF:
+				continue
+			_mesh.surface_add_vertex(_aim_start + _aim_dir * d)
+			_mesh.surface_add_vertex(rp)
 	_mesh.surface_end()
+
+
+## 実弾道上で「狙いレイ方向の距離d」に達した最初のサンプル点（なければINF）
+func _real_point_at(d: float) -> Vector3:
+	for p in _real_pts:
+		if (p - _aim_start).dot(_aim_dir) >= d:
+			return p
+	return Vector3.INF
 
 
 ## 破線ポリライン。DASH_LEN描いてDASH_LEN休むを繰り返す。phase＝パターンの開始オフセット(m)
@@ -289,23 +313,48 @@ func _ray_offset(p: Vector3) -> Vector3:
 	return p - (_aim_start + _aim_dir * d)
 
 
-## 実弾の軌跡とリプレイ弾道（from→to直線）の最大乖離。
+## 実弾の軌跡と「リプレイ弾が実際に通った点列」の最大乖離。
+## ※ 以前は始点→終点の直線（弦）と比較していたため、重力ONだと正しく弧を描いて
+##   いても「弧と弦のたわみ差（DROP/4）」がズレとして誤報告されていた。
+##   リプレイの実サンプル点列と比較するよう修正（2026-07-10）。
+## リプレイ再生が終わるまでは「リプレイ弾が到達済みの区間」だけを比較する。
 ## リプレイ区間より先へ飛び続けた尾（標的が動いた場合など）は比較対象から外す
 func _max_dev() -> float:
-	if _real_pts.size() < 2 or not _has_replay:
+	if _real_pts.size() < 2 or not _has_replay or _replay_pts.size() < 2:
 		return -1.0
 	var seg := _replay_to - _replay_from
 	var len2 := seg.length_squared()
 	if len2 < 0.0001:
 		return -1.0
+	var counts := Vector2i(_real_pts.size(), _replay_pts.size())
+	if counts == _dev_counts:
+		return _dev_cache  # 点数が変わっていなければ前回の計算結果を使う
+	_dev_counts = counts
+	var poly := _replay_pts.duplicate()
+	var bc = stage.bullet_cam
+	var flying: bool = bc != null and bc.bolt_flying()
+	if not flying:
+		poly.append(_replay_to)  # 再生終了後は終点まで弧を閉じて比較する
+	var t_max := 1.02
+	if flying:
+		t_max = clampf((poly[poly.size() - 1] - _replay_from).dot(seg) / len2, 0.0, 1.0)
 	var m := -1.0
 	for p in _real_pts:
 		var t := (p - _replay_from).dot(seg) / len2
-		if t > 1.02:
+		if t > t_max:
 			continue
-		var q := _replay_from + seg * clampf(t, 0.0, 1.0)
-		m = maxf(m, p.distance_to(q))
+		m = maxf(m, _dist_to_polyline(p, poly))
+	_dev_cache = m
 	return m
+
+
+## 点pからポリライン（点列を結んだ折れ線）までの最短距離
+func _dist_to_polyline(p: Vector3, pts: PackedVector3Array) -> float:
+	var best := INF
+	for i in range(pts.size() - 1):
+		var q := Geometry3D.get_closest_point_to_segment(p, pts[i], pts[i + 1])
+		best = minf(best, p.distance_to(q))
+	return best
 
 
 # ---------------------------------------------------------------- 視点切替
@@ -385,4 +434,6 @@ func _clear_shot() -> void:
 	_has_real_impact = false
 	_replay_pts = PackedVector3Array()
 	_has_replay = false
+	_dev_cache = -1.0
+	_dev_counts = Vector2i(-1, -1)
 	_mesh.clear_surfaces()
