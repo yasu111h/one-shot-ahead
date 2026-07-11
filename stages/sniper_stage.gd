@@ -308,8 +308,11 @@ func _do_fire() -> void:
 		return
 	ammo -= 1
 	var cam := rig.camera
-	# 照準レイ（画面中央）そのままで撃つ。発射方向の補正は一切ない＝当てるのはプレイヤー自身
+	# 照準レイ（画面中央）そのまま。発射方向の「補正」は一切ない＝当てるのはプレイヤー自身
 	var dir := -cam.global_transform.basis.z
+	# 弾のばらつき（散布）：撃った瞬間に、標的が遠いほど大きくランダムにずれる。
+	# 予測より前に掛けるので、バレットカム・デバッグ・実弾のすべてが同じずれで一致する
+	dir = _apply_spread(dir)
 	var start := cam.global_position + dir * 0.6
 	# 弾道予測には民間人も混ぜる。手前に立たれていたら悪人への命中は「確定」しない
 	var infos := _target_infos()
@@ -440,6 +443,33 @@ func _update_rangefinder() -> void:
 		hud.range_distance = from.distance_to(result.position)
 	else:
 		hud.range_distance = -1.0
+
+
+# ---------------------------------------------------------------- 弾のばらつき（散布）
+
+## 距離連動の散布角の上限(rad)。基準＝600m先で窓1枚（横幅5m）ぶんずれうる。
+## 角度上限が距離に比例して育つため、着弾のずれは距離の二乗で効く
+## （例: 200mで±0.56m・400mで±2.2m・600mで±5m）。
+const SPREAD_REF_DIST := 600.0   # 基準距離(m)
+const SPREAD_REF_DEV := 5.0      # 基準距離での最大ずれ幅(m)＝都市ステージの窓の横幅
+
+## 発射方向にランダムな散布を掛ける（照準は静止のまま・弾だけがずれる）。
+## HUDのSPREADトグルでOFFにすると素通し
+func _apply_spread(dir: Vector3) -> Vector3:
+	if not Settings.spread_enabled:
+		return dir
+	var d: float = hud.range_distance
+	if d <= 0.0:
+		return dir  # 測距なし（空など）＝ずらす意味がない
+	var max_ang := (SPREAD_REF_DEV / SPREAD_REF_DIST) * (d / SPREAD_REF_DIST)
+	# 円盤内で一様にばらす（sqrtで中心偏重を打ち消す）＋方位はランダム
+	var ang := max_ang * sqrt(randf())
+	var azim := randf() * TAU
+	var side := dir.cross(Vector3.UP)
+	side = side.normalized() if side.length() > 0.01 else Vector3.RIGHT
+	var up := side.cross(dir).normalized()
+	var offset_dir := (side * cos(azim) + up * sin(azim)).normalized()
+	return (dir + offset_dir * tan(ang)).normalized()
 
 
 # ---------------------------------------------------------------- 照準減速(スティッキーエイム)

@@ -18,6 +18,13 @@ var gravity_enabled := false:
 		Ballistics.gravity_enabled = v
 		_save()
 
+## 弾のばらつき（散布）を使うか。撃った瞬間に弾の方向が距離に応じてランダムにずれる
+## （照準は静止のまま。600m先で窓1枚≒横5mまでずれうる）
+var spread_enabled := true:
+	set(v):
+		spread_enabled = v
+		_save()
+
 
 func _ready() -> void:
 	_load()
@@ -29,6 +36,7 @@ func _load() -> void:
 		return  # 初回起動などファイルなし＝デフォルトのまま
 	miss_replay_enabled = bool(cfg.get_value(SECTION, "miss_replay", true))
 	gravity_enabled = bool(cfg.get_value(SECTION, "gravity", false))
+	spread_enabled = bool(cfg.get_value(SECTION, "spread", true))
 
 
 func _save() -> void:
@@ -36,4 +44,5 @@ func _save() -> void:
 	cfg.load(SETTINGS_PATH)  # 既存の設定を保持したまま上書き（無ければ新規作成）
 	cfg.set_value(SECTION, "miss_replay", miss_replay_enabled)
 	cfg.set_value(SECTION, "gravity", gravity_enabled)
+	cfg.set_value(SECTION, "spread", spread_enabled)
 	cfg.save(SETTINGS_PATH)
