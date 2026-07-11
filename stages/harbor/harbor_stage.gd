@@ -9,8 +9,7 @@ extends SniperStage
 ## 旧実装の失敗（暗すぎる・地面がない）への対策として、明るさとコントラストを最優先：
 ## 地面を明るいコンクリートにし、月光＋作業灯の光だまり＋発光マテリアルで視認性を確保する。
 ##
-## 対応モード: A(精密)/B(応戦)。モード基盤のmainマージ後、台帳の宣言に反映する
-const SUPPORTED_MODES := ["precision", "engage"]
+## 対応モード: A(精密)/B(応戦)。宣言は GameManager.STAGES の modes:[0,1]（台帳が正）
 
 const ROOF_Y := 14.0            # 倉庫の屋上の高さ
 const ROW_Z := -150.0           # コンテナ前列（この裏を悪人が歩く）
