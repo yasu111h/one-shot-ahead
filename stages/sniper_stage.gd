@@ -440,8 +440,6 @@ func _update_rangefinder() -> void:
 		hud.range_distance = from.distance_to(result.position)
 	else:
 		hud.range_distance = -1.0
-	# 距離連動の手ブレへ測距値を渡す（遠くを狙うほど照準が揺れる）
-	rig.sway_distance = hud.range_distance
 
 
 # ---------------------------------------------------------------- 照準減速(スティッキーエイム)
