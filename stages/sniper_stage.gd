@@ -45,6 +45,9 @@ var bullets_in_flight := 0
 var game_over := false
 
 var mode: GameMode          # ゲームモード（A精密/B応戦/C物量…）。未指定なら選択中or精密が入る
+# モードが制御するリプレイ方針（C物量は要所以外を抑制する。既定は従来どおり毎回リプレイ）
+var replay_enabled := true        # falseの間は命中確定弾もリプレイせず実弾で見せる
+var miss_replay_allowed := true   # falseの間はミスリプレイを出さない（ユーザー設定より優先）
 var rig: SniperCamera
 var girl: SniperGirl        # 主人公アバター（非スコープ時のみ表示）
 var bullet_cam: BulletCam
@@ -340,12 +343,13 @@ func _do_fire() -> void:
 	sfx.play_shot()
 	mode.on_fire()
 	# 悪人への命中確定弾は毎回バレットカムになる（民間人への誤射は演出せず実弾で見せる）
-	if not predicted.is_empty() and predicted.target.hostile:
+	# ※ モードが replay_enabled=false の間は抑制（C物量の要所リプレイ等）
+	if not predicted.is_empty() and predicted.target.hostile and replay_enabled:
 		_start_replay(start, predicted, dir)
 		return
 	# ミス弾（何にも当たらない弾）も、設定ONならバレットカムで見送る
 	# （誤射＝民間人命中の予測弾は従来どおり実弾で見せる）
-	if predicted.is_empty() and Settings.miss_replay_enabled:
+	if predicted.is_empty() and Settings.miss_replay_enabled and miss_replay_allowed:
 		_start_miss_replay(start, dir)
 		return
 	# 通常弾：実弾（Ballisticsの毎フレーム積分。既定は直線・等速）を飛ばし、
