@@ -50,6 +50,12 @@ const STAGES := [
 		"scene": "res://stages/test_range/test_range.tscn",
 		"modes": [0],
 	},
+	{
+		"name": "DESERT CHECKPOINT",
+		"desc": "夜明けの砂漠。検問所を占拠した武装勢力だけを撃ち抜け",
+		"scene": "res://stages/desert/desert_stage.tscn",
+		"modes": [0, 2],
+	},
 ]
 const SELECT_SCENE := "res://ui/stage_select.tscn"
 
