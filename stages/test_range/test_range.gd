@@ -97,6 +97,9 @@ func _build_world() -> void:
 
 
 func _spawn_targets() -> void:
+	# C物量モードでは練習標的を置かない（敵はHordeModeが波で湧かせる）
+	if GameManager.MODES[GameManager.selected_mode].id == "horde":
+		return
 	# 静止標的（80m・最初に狙う練習用に近め）
 	_add_standing(Vector3(6, 0.76, -80))
 	# 歩行標的（300m / 450m・Path3D追従）

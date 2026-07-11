@@ -23,8 +23,8 @@ const MODES := [
 		"id": "horde",
 		"name": "HORDE",
 		"desc": "物量。押し寄せる敵を撃ち捌け",
-		"script": "",   # repo_03 が core/modes/horde_mode.gd を実装したら差す
-		"ready": false,
+		"script": "res://core/modes/horde_mode.gd",
+		"ready": true,
 	},
 ]
 
@@ -48,7 +48,7 @@ const STAGES := [
 		"name": "TEST RANGE",
 		"desc": "平原の射撃場。腕試しと感度チューニング",
 		"scene": "res://stages/test_range/test_range.tscn",
-		"modes": [0],
+		"modes": [0, 2],   # C物量の当面の舞台（砂漠完成後に移設予定）
 	},
 ]
 const SELECT_SCENE := "res://ui/stage_select.tscn"
