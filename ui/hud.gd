@@ -30,6 +30,7 @@ var _select_btn: Button
 var _menu_btn: Button
 var _miss_toggle: Button
 var _gravity_toggle: Button
+var _sway_toggle: Button
 var _fire_btn: TouchScreenButton
 var _scope_btn: TouchScreenButton
 var _stamp_t := -1.0
@@ -135,6 +136,18 @@ func _ready() -> void:
 		Settings.gravity_enabled = not Settings.gravity_enabled
 		_update_gravity_toggle())
 	_update_gravity_toggle()
+	# 手ブレトグル（右上・GRAVITYの下）。ONで標的が遠いほど照準が揺れる
+	_sway_toggle = Button.new()
+	_sway_toggle.custom_minimum_size = Vector2(150, 26)
+	_sway_toggle.add_theme_font_size_override("font_size", 11)
+	_sway_toggle.modulate = Color(1, 1, 1, 0.75)
+	add_child(_sway_toggle)
+	_sway_toggle.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT)
+	_sway_toggle.position += Vector2(-158, 130)
+	_sway_toggle.pressed.connect(func() -> void:
+		Settings.sway_enabled = not Settings.sway_enabled
+		_update_sway_toggle())
+	_update_sway_toggle()
 	# 操作ボタン（マルチタッチ対応のTouchScreenButton）
 	_fire_btn = _make_touch_button("FIRE", 52.0, Color(1.0, 0.55, 0.45, 0.9))
 	_fire_btn.pressed.connect(func() -> void: stage.request_fire())
@@ -221,6 +234,7 @@ func _process(delta: float) -> void:
 	_zoom_label.visible = scoped and not replay
 	_miss_toggle.visible = not replay
 	_gravity_toggle.visible = not replay
+	_sway_toggle.visible = not replay
 	_menu_btn.visible = not replay
 	_zoom_label.text = ["1x", "4x", "8x"][rig.zoom_stage]
 	_ammo_label.text = "AMMO %d/%d" % [stage.ammo, stage.max_ammo]
@@ -289,6 +303,10 @@ func _update_miss_toggle() -> void:
 ## 重力弾道トグルの表記を現在の設定値に合わせる
 func _update_gravity_toggle() -> void:
 	_gravity_toggle.text = "GRAVITY: %s" % ("ON" if Settings.gravity_enabled else "OFF")
+
+
+func _update_sway_toggle() -> void:
+	_sway_toggle.text = "SWAY: %s" % ("ON" if Settings.sway_enabled else "OFF")
 
 
 func show_clear() -> void:
