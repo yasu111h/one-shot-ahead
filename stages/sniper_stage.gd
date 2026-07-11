@@ -527,8 +527,10 @@ func _closest_on_segment_to_ray(a: Vector3, b: Vector3, o: Vector3, d: Vector3) 
 func _on_bullet_glass(result: Dictionary, dir: Vector3) -> void:
 	var pane: Object = result.collider
 	if pane != null and pane.has_method("shatter"):
-		pane.shatter(result.position, dir)
+		# 音が先・破片が後: shatter()は破片ノードの大量生成で処理落ちすることがあり、
+		# 音を後に置くとそのぶん遅れて聞こえる(命中音との順番が逆転する一因)
 		sfx.play_glass()
+		pane.shatter(result.position, dir)
 
 
 ## リプレイ弾道(from→to)上のガラスを「リプレイの弾が通過する瞬間」に割る。
@@ -550,20 +552,22 @@ func _schedule_replay_glass(from: Vector3, to: Vector3) -> void:
 		var point: Vector3 = g.position
 		# ガラスが割れる時刻＝リプレイ弾がそこを通過する瞬間（再生時間は飛行距離で決まる）。
 		# ただし標的の直前のガラス（窓越しの狙撃）は通過が命中とほぼ同時刻になり、
-		# フレーム処理の揺らぎで「命中音→ガラス音」と逆順に聞こえてしまう。
-		# 割れは必ず命中の0.15秒以上前に先行させる（割れる音→命中音の順を保証する）
+		# 「命中音→ガラス音」と逆順に聞こえてしまう。
+		# 割れは必ず命中の0.35秒以上前に先行させ、耳ではっきり
+		# 「パリン(ガラス)→ドッ(命中)」の順になるようにする
 		var t_total := BulletCam.flight_time_for(total)
 		var delay: float = minf(
 			from.distance_to(point) / total * t_total,
-			t_total - 0.15)
+			t_total - 0.35)
 		delay = maxf(delay, 0.0)
 		# タイマーはシーンよりも長生きするので、リトライ等で破棄済みなら何もしない
 		get_tree().create_timer(delay, true, false, true).timeout.connect(func() -> void:
 			if not is_instance_valid(self) or not is_instance_valid(pane):
 				return
 			if pane.has_method("shatter"):
-				pane.shatter(point, dir)
-				sfx.play_glass())
+				# 音が先・破片が後(生成の処理落ちで音が遅れないように)
+				sfx.play_glass()
+				pane.shatter(point, dir))
 		pos = point + dir * 0.1  # 同じ板を二重検知しないよう少し先へ進めて再走査
 
 
