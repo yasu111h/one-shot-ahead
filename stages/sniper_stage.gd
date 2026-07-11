@@ -1,6 +1,9 @@
 class_name SniperStage
 extends Node3D
-## 狙撃ステージの共通基底。環境・入力・射撃・照準減速・バレットカム・勝敗を持つ。
+## 狙撃ステージの共通基底。環境・入力・射撃・照準減速・バレットカムを持つ。
+## 勝敗ルールは GameMode（core/modes/）に委譲：mode が未指定なら選択中のモード
+## （既定はA精密＝PrecisionMode・従来挙動）が入る。射撃イベントは
+## on_fire/on_hit/on_miss、毎フレームは tick、勝敗は check_win/check_fail で回す。
 ## ステージ固有（見た目・地形・標的配置・狙撃地点）はサブクラスが下記を上書きする:
 ##   _build_environment() … 空・光・フォグ
 ##   _build_world()       … 地形/建物
@@ -41,6 +44,7 @@ var hostiles: Array = []   # 撃つべき標的（勝敗判定はこの数で行
 var bullets_in_flight := 0
 var game_over := false
 
+var mode: GameMode          # ゲームモード（A精密/B応戦/C物量…）。未指定なら選択中or精密が入る
 var rig: SniperCamera
 var girl: SniperGirl        # 主人公アバター（非スコープ時のみ表示）
 var bullet_cam: BulletCam
@@ -71,6 +75,10 @@ func _ready() -> void:
 	_build_fx()
 	_build_hud()
 	_build_debug()
+	# ゲームモード（ステージ・テストが事前に注入していなければ、選択中のモードを生成）
+	if mode == null:
+		mode = GameManager.create_selected_mode()
+	mode.setup(self)
 
 
 # ---------------------------------------------------------------- サブクラスの差し替え点
@@ -301,6 +309,10 @@ func _physics_process(delta: float) -> void:
 	hud.set_sticky(_stick_factor < 1.0)
 	# 測距（照準先の距離をHUDへ）
 	_update_rangefinder()
+	# モードの毎フレーム処理と時間経過系の勝敗（接近・被弾などはモードが判定する）
+	if not game_over and mode != null:
+		mode.tick(delta)
+		_check_end()
 
 
 func _do_fire() -> void:
@@ -326,6 +338,7 @@ func _do_fire() -> void:
 	fx.muzzle_flash(start)
 	hud.on_shot()
 	sfx.play_shot()
+	mode.on_fire()
 	# 悪人への命中確定弾は毎回バレットカムになる（民間人への誤射は演出せず実弾で見せる）
 	if not predicted.is_empty() and predicted.target.hostile:
 		_start_replay(start, predicted, dir)
@@ -412,7 +425,8 @@ func _start_miss_replay(start: Vector3, dir: Vector3) -> void:
 			else:
 				fx.impact_burst(point, normal)
 				_spawn_impact_dust(point)
-		hud.show_miss_stamp(),
+		hud.show_miss_stamp()
+		mode.on_miss(),
 		Ballistics.effective_accel(wind_accel), impact.time)
 
 
@@ -430,6 +444,7 @@ func _on_replay_impact(target: Node, point: Vector3, zone: String, dir: Vector3)
 		sfx.play_headshot()
 	else:
 		sfx.play_hit()
+	mode.on_hit(target, zone)
 	# 勝敗判定はバレットカム終了時（finishedシグナル→_check_end）に行う
 
 
@@ -614,11 +629,13 @@ func _on_bullet_hit(result: Dictionary, bullet: Bullet) -> void:
 		else:
 			fx.impact_burst(result.position, normal)
 			_spawn_impact_dust(result.position)
+		mode.on_miss()
 		_check_end()
 
 
 func _on_bullet_vanished() -> void:
 	bullets_in_flight -= 1
+	mode.on_miss()
 	_check_end()
 
 
@@ -634,10 +651,11 @@ func _handle_target_hit(result: Dictionary, bullet: Bullet) -> void:
 	var dist := int(round(rig.camera.global_position.distance_to(result.position)))
 	target.die(bullet.velocity.normalized() * 3.0)
 	fx.impact_burst(result.position, normal)
-	# 民間人の誤射＝即ミッション失敗
+	# 民間人の誤射＝勝敗はモードが決める（精密モードでは即FAIL）。演出は出さない
 	if not target.hostile:
 		sfx.play_hit()
-		_fail("CIVILIAN DOWN")
+		mode.on_hit(target, part)
+		_check_end()
 		return
 	hits += 1
 	hud.show_stamp("%dm %s" % [dist, "HEADSHOT" if part == "head" else "HIT"])
@@ -646,6 +664,7 @@ func _handle_target_hit(result: Dictionary, bullet: Bullet) -> void:
 		sfx.play_headshot()
 	else:
 		sfx.play_hit()
+	mode.on_hit(target, part)
 	_check_end()
 
 
@@ -683,15 +702,18 @@ func _fail(msg: String) -> void:
 	hud.show_fail(msg)
 
 
+## 勝敗判定（モードに委譲）。fail優先→win。どちらも空文字なら継続
 func _check_end() -> void:
-	if game_over:
+	if game_over or mode == null:
 		return
-	if hits >= hostiles.size():
+	var fail := mode.check_fail()
+	if fail != "":
+		_fail(fail)
+		return
+	var win := mode.check_win()
+	if win != "":
 		game_over = true
 		hud.show_clear()
-	elif ammo <= 0 and bullets_in_flight <= 0 and not is_replay_active():
-		game_over = true
-		hud.show_fail("AMMO OUT")
 
 
 func retry() -> void:
