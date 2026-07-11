@@ -386,6 +386,14 @@ class DynamicReticle:
 	const COL_RETICLE := Color(1.0, 1.0, 1.0, 0.9)
 	const COL_STICKY_DOT := Color(1.0, 0.62, 0.3, 0.95)  # 減速ゾーン内の中心点(控えめ)
 	const HITMARK_TIME := 0.16
+	# スコープ時の実銃風レティクル：細い黒芯＋うっすら白ハロー（明背景で黒く見え、
+	# 暗背景でも沈まない）。中心は開けて標的・弾道を隠さない
+	const SCOPE_CORE := Color(0.04, 0.04, 0.04, 0.95)    # ほぼ黒の細い芯
+	const SCOPE_HALO := Color(1.0, 1.0, 1.0, 0.35)       # 芯を薄く縁取る白ハロー
+	const SCOPE_CORE_W := 1.3
+	const SCOPE_HALO_W := 2.7
+	const SCOPE_GAP := 6.0                               # 中心の開き（塗りドットなし）
+	const SCOPE_TICK := 34.0                             # 十字の腕の長さ（細く長い）
 
 	var scoped := false
 	var sticky := false          # 照準減速ゾーン内か(命中保証の意味はない)
@@ -402,10 +410,20 @@ class DynamicReticle:
 
 	func _draw() -> void:
 		var c := size * 0.5
-		var gap := (7.0 if scoped else 11.0) + bloom * 12.0
-		# 十字は常に白。減速ゾーン内は中心点だけ色づく（結果はヒットマーカーで示す）
-		var dot := COL_STICKY_DOT if sticky else COL_RETICLE
-		Reticle.draw_cross(self, c, gap, 9.0, COL_RETICLE, dot)
+		if scoped:
+			# スコープ中：実銃風の細い十字。中心は開け（ドットなし）て標的・弾道を隠さない。
+			# 減速ゾーン内だけ、中心に小さな色つき点をうっすら出す（控えめな合図）
+			var gap := SCOPE_GAP + bloom * 12.0
+			Reticle.draw_cross(self, c, gap, SCOPE_TICK, SCOPE_CORE,
+				SCOPE_HALO, SCOPE_CORE_W, SCOPE_HALO_W, 0.0)
+			if sticky:
+				draw_circle(c, 2.0, COL_STICKY_DOT)
+		else:
+			# 腰だめ：はっきりした白十字＋中心点（戦闘用レティクル）
+			var gap := 11.0 + bloom * 12.0
+			var dot := COL_STICKY_DOT if sticky else COL_RETICLE
+			Reticle.draw_cross(self, c, gap, 9.0, COL_RETICLE,
+				Reticle.OUTLINE, Reticle.CORE_W, Reticle.OUTLINE_W, Reticle.DOT_CORE, dot)
 		# ヒットマーカー(命中の一瞬、斜め4本)。ヘッドショットはオレンジ
 		if hitmark_t > 0.0:
 			var a := hitmark_t / HITMARK_TIME
