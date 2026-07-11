@@ -27,6 +27,12 @@ const META_KEY := "broken_facade_windows"   # 割れ済みペインの記録(ス
 ## 着弾が窓なら割って true を返す(火花・土煙は出さない側で分岐する)。
 ## 窓以外(壁の桟・コンクリ・屋上など)なら false。
 static func try_break(stage: Node3D, point: Vector3, normal: Vector3, dir: Vector3) -> bool:
+	# シェーダ窓のないステージでは何もしない(判定は格子計算だけなので、
+	# そのままだと砂漠の小屋・車・岩山など「ただの垂直面」までガラス扱いになる)。
+	# 既存ステージの挙動を変えないよう既定は有効。無効にしたいステージだけ
+	# set_meta("facade_windows_enabled", false) を宣言する
+	if not stage.get_meta("facade_windows_enabled", true):
+		return false
 	# 垂直な壁面のみ(屋上・地面は窓ではない)
 	if absf(normal.y) > 0.5:
 		return false

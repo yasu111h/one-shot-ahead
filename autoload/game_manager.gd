@@ -18,6 +18,11 @@ const STAGES := [
 		"desc": "平原の射撃場。腕試しと感度チューニング",
 		"scene": "res://stages/test_range/test_range.tscn",
 	},
+	{
+		"name": "DESERT CHECKPOINT",
+		"desc": "夜明けの砂漠。検問所を占拠した武装勢力だけを撃ち抜け",
+		"scene": "res://stages/desert/desert_stage.tscn",
+	},
 ]
 const SELECT_SCENE := "res://ui/stage_select.tscn"
 
