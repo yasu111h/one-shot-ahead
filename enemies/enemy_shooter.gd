@@ -20,6 +20,7 @@ var on_player_hit := Callable()
 var use_cover := false
 var accuracy := 0.2          # 0..1。EngageMode が位置特定ゲージから毎フレーム更新
 
+const MUZZLE_SPEED := 300.0  # 敵弾の弾速(m/s)。プレイヤーの弾と同じ
 const HIDE_DEPTH := 1.7      # 遮蔽の裏へ沈める深さ(m)
 const EXPOSED_FRAC := 0.42   # 1サイクルのうち顔を出している割合
 const MOVE_FRAC := 0.14      # 沈む／せり上がるのにかける割合(残りは静止)
@@ -139,11 +140,37 @@ func _try_fire() -> void:
 	_fire_at_player(muzzle)
 
 
-## 発砲：マズルフラッシュ＋発射音を出し、accuracy で命中ロール。当たれば on_player_hit
+## 発砲：マズルフラッシュ＋発射音に加え、プレイヤー方向へ「白いトレーサー付きの実弾」を
+## 飛ばす（プレイヤーの弾と同じ ShotFx.attach_tracer＝敵の弾道が目で見える）。
+## 命中は accuracy ロールで先に決め、外れ弾は照準点をカメラの脇へ逸らす＝
+## 「白い筋が掠めて抜けていく」のが見える。被弾の適用は弾がこちらへ届く瞬間に合わせる
 func _fire_at_player(muzzle: Vector3) -> void:
 	if stage.fx != null:
 		stage.fx.muzzle_flash(muzzle)
 	if stage.sfx != null:
 		stage.sfx.play_shot()
-	if randf() < accuracy and on_player_hit.is_valid():
-		on_player_hit.call()
+	var will_hit := randf() < accuracy
+	var aim: Vector3 = stage.rig.camera.global_position
+	if not will_hit:
+		# 外れ弾：カメラの横・上下へランダムに逸らす（近くを通るほど緊張感が出る）
+		var side := (aim - muzzle).cross(Vector3.UP).normalized()
+		aim += side * randf_range(1.2, 2.8) * (1.0 if randf() < 0.5 else -1.0) \
+			+ Vector3(0.0, randf_range(-0.6, 1.5), 0.0)
+	var dir := (aim - muzzle).normalized()
+	# 演出弾：勝敗カウンタ（bullets_in_flight等）には一切触れない。
+	# プレイヤーに当たり判定はないので弾はカメラ脇を抜け、背後の壁で火花が散る
+	var bullet := Bullet.new()
+	stage.add_child(bullet)
+	bullet.global_position = muzzle + dir * 0.8
+	bullet.velocity = dir * MUZZLE_SPEED
+	bullet.hit.connect(func(result: Dictionary) -> void:
+		if is_instance_valid(stage) and stage.fx != null:
+			stage.fx.impact_burst(result.position, result.get("normal", Vector3.UP)))
+	if stage.fx != null:
+		stage.fx.attach_tracer(bullet)
+	# 被弾判定は「弾がこちらへ届く瞬間」に遅らせる（弾速300m/s・time_scale連動）
+	if will_hit and on_player_hit.is_valid():
+		var flight := muzzle.distance_to(aim) / MUZZLE_SPEED
+		stage.get_tree().create_timer(flight).timeout.connect(func() -> void:
+			if is_instance_valid(stage) and not stage.game_over and on_player_hit.is_valid():
+				on_player_hit.call())
