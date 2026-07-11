@@ -79,7 +79,9 @@ func _process(delta: float) -> void:
 	var ts := maxf(Engine.time_scale, 0.0001)
 	# スロー中は破片の速度を補償して「舞い散り」を見せる(通常時は1.0=補償なし)
 	var k := maxf(1.0, SLOWMO_DRIFT / ts)
-	_live_fx = _live_fx.filter(func(p: Object) -> bool: return is_instance_valid(p))
+	# 解放済みインスタンスは型付き引数(Object)へ変換できず filter がエラーを吐くため、
+	# 引数は無型で受けて is_instance_valid だけで判定する
+	_live_fx = _live_fx.filter(func(p) -> bool: return is_instance_valid(p))
 	for p in _live_fx:
 		p.speed_scale = k
 	# 閃光はスローに巻き込まず実時間で減衰(スロー中でも「パッと光ってすっと消える」)

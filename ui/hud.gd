@@ -31,6 +31,8 @@ var _menu_btn: Button
 var _miss_toggle: Button
 var _gravity_toggle: Button
 var _spread_toggle: Button
+var _mode_lines: Label            # モード固有のHUD行（hud_extra().lines の受け皿）
+var _mode_gauges: ModeGauges      # モード固有のゲージ（hud_extra().gauges の受け皿）
 var _fire_btn: TouchScreenButton
 var _scope_btn: TouchScreenButton
 var _stamp_t := -1.0
@@ -70,6 +72,15 @@ func _ready() -> void:
 	_mission_label = _make_label(mission, 13, Control.PRESET_TOP_LEFT, Vector2(12, 48))
 	_mission_label.modulate = Color(1.0, 0.72, 0.45, 0.95)
 	_mission_label.visible = mission != ""
+	# モード固有HUDの共通受け皿（GameMode.hud_extra() のデータを毎フレーム描く。
+	# モード実装（B応戦/C物量…）は hud.gd を触らずここに乗せる）
+	_mode_lines = _make_label("", 13, Control.PRESET_TOP_LEFT, Vector2(12, 68))
+	_mode_lines.modulate = Color(0.85, 0.92, 1.0, 0.95)
+	_mode_lines.visible = false
+	_mode_gauges = ModeGauges.new()
+	_mode_gauges.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(_mode_gauges)
+	_mode_gauges.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_wind_label = _make_center_label("WIND 0.0 m/s", 16, Control.PRESET_CENTER_TOP, Vector2(0, 8))
 	# 風が弾に影響しない設定（直線弾道）の間は風HUDを出さない
 	_wind_label.visible = Ballistics.WIND_ENABLED
@@ -236,6 +247,14 @@ func _process(delta: float) -> void:
 	_gravity_toggle.visible = not replay
 	_spread_toggle.visible = not replay
 	_menu_btn.visible = not replay
+	# モード固有HUD（hud_extra）を反映
+	var extra: Dictionary = stage.mode.hud_extra() if stage.mode != null else {}
+	var lines: Array = extra.get("lines", [])
+	_mode_lines.visible = not lines.is_empty() and not replay
+	_mode_lines.text = "\n".join(PackedStringArray(lines))
+	_mode_gauges.gauges = extra.get("gauges", [])
+	_mode_gauges.visible = not _mode_gauges.gauges.is_empty() and not replay
+	_mode_gauges.queue_redraw()
 	_zoom_label.text = ["1x", "4x", "8x"][rig.zoom_stage]
 	_ammo_label.text = "AMMO %d/%d" % [stage.ammo, stage.max_ammo]
 	_targets_label.text = "TARGETS %d/%d" % [stage.hits, stage.hostiles.size()]
@@ -324,6 +343,36 @@ func show_fail(msg: String) -> void:
 	_center_msg.visible = true
 	_retry_btn.visible = true
 	_select_btn.visible = true
+
+
+## モード固有ゲージの共通描画（hud_extra().gauges）。画面下中央に横バーを縦に並べる。
+## 形式: [{"label": String, "value": 0..1, "color": Color}, ...]
+class ModeGauges:
+	extends Control
+
+	const BAR_W := 240.0
+	const BAR_H := 10.0
+	const GAP := 22.0
+
+	var gauges: Array = []
+
+	func _draw() -> void:
+		if gauges.is_empty():
+			return
+		var font := ThemeDB.fallback_font
+		var cx := size.x * 0.5
+		var y := size.y - 150.0 - GAP * float(gauges.size() - 1)
+		for g in gauges:
+			var label: String = g.get("label", "")
+			var value: float = clampf(g.get("value", 0.0), 0.0, 1.0)
+			var col: Color = g.get("color", Color(1, 1, 1))
+			var rect := Rect2(cx - BAR_W * 0.5, y, BAR_W, BAR_H)
+			draw_rect(rect, Color(1, 1, 1, 0.15))
+			draw_rect(Rect2(rect.position, Vector2(BAR_W * value, BAR_H)), col)
+			if label != "":
+				draw_string(font, rect.position + Vector2(0, -4), label,
+					HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color(1, 1, 1, 0.7))
+			y += GAP
 
 
 ## 動的レティクル（TABIJIのcombat_hud.gd:56-77を移植）
