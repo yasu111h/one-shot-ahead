@@ -16,8 +16,8 @@ const MODES := [
 		"id": "engage",
 		"name": "ENGAGE",
 		"desc": "応戦。敵は撃ち返してくる",
-		"script": "",   # repo_02 が core/modes/engage_mode.gd を実装したら差す
-		"ready": false,
+		"script": "res://core/modes/engage_mode.gd",  # repo_02 実装済み
+		"ready": true,
 	},
 	{
 		"id": "horde",
