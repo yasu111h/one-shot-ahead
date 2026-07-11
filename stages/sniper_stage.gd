@@ -27,7 +27,7 @@ const TERRAIN_MASK := 0b0001
 const GLASS_MASK := 0b10000  # 窓ガラス(レイヤ5)。割れるだけで弾は逸れない・止まらない
 # バレットカムのクールダウンは廃止（2026-07-10ユーザー決定：対象弾は毎回リプレイする）
 
-@export var muzzle_speed := 300.0  # 弾速 m/s（可変）
+@export var muzzle_speed := 850.0  # 弾速 m/s（ほぼ実銃＝7.62mm NATO級。200mで約0.24s到達）
 @export var max_ammo := 100
 
 # --- 照準減速(スティッキーエイム・CoD方式)。弾は曲げず、敵標的の近くでだけ感度を落とす ---
