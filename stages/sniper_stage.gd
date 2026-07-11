@@ -546,8 +546,15 @@ func _schedule_replay_glass(from: Vector3, to: Vector3) -> void:
 			return
 		var pane: Object = g.collider
 		var point: Vector3 = g.position
-		# ガラスが割れる時刻＝リプレイ弾がそこを通過する瞬間（再生時間は飛行距離で決まる）
-		var delay: float = from.distance_to(point) / total * BulletCam.flight_time_for(total)
+		# ガラスが割れる時刻＝リプレイ弾がそこを通過する瞬間（再生時間は飛行距離で決まる）。
+		# ただし標的の直前のガラス（窓越しの狙撃）は通過が命中とほぼ同時刻になり、
+		# フレーム処理の揺らぎで「命中音→ガラス音」と逆順に聞こえてしまう。
+		# 割れは必ず命中の0.15秒以上前に先行させる（割れる音→命中音の順を保証する）
+		var t_total := BulletCam.flight_time_for(total)
+		var delay: float = minf(
+			from.distance_to(point) / total * t_total,
+			t_total - 0.15)
+		delay = maxf(delay, 0.0)
 		# タイマーはシーンよりも長生きするので、リトライ等で破棄済みなら何もしない
 		get_tree().create_timer(delay, true, false, true).timeout.connect(func() -> void:
 			if not is_instance_valid(self) or not is_instance_valid(pane):
