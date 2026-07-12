@@ -5,6 +5,20 @@ extends Node
 const SETTINGS_PATH := "user://settings.cfg"
 const SECTION := "gameplay"
 
+## ★デバッグモード（開発者用の隠しスイッチ）。
+## true にすると①プレイ画面に「DEBUG」ボタン（GRAVITY/SPREAD/弾道デバッグ）が出る、
+## ②ホーム画面に「HORDE表示」トグルが出て、ONにすると隠しモードのHORDEが遊べるようになる。
+## リリース状態は false。開発者がこの行を true に書き換えて使う（設定画面には出さない）。
+const DEBUG_MODE := false
+
+## HORDE（物量）モードをホーム画面に出すか。既定は非表示＝ホームは2モードだけ。
+## DEBUG_MODE が true のときにホームの「HORDE表示」トグルで切り替えられる。
+## （DEBUG_MODE が false の間は、この値に関わらずHORDEは出さない）
+var horde_visible := false:
+	set(v):
+		horde_visible = v
+		_save()
+
 ## 命中弾（悪人へ当たる確定弾）でバレットカム（キルカム）を流すか
 var hit_replay_enabled := true:
 	set(v):
@@ -56,6 +70,7 @@ func _load() -> void:
 	var cfg := ConfigFile.new()
 	if cfg.load(SETTINGS_PATH) != OK:
 		return  # 初回起動などファイルなし＝デフォルトのまま
+	horde_visible = bool(cfg.get_value(SECTION, "horde_visible", false))
 	hit_replay_enabled = bool(cfg.get_value(SECTION, "hit_replay", true))
 	miss_replay_enabled = bool(cfg.get_value(SECTION, "miss_replay", true))
 	gravity_enabled = bool(cfg.get_value(SECTION, "gravity", false))
@@ -67,6 +82,7 @@ func _load() -> void:
 func _save() -> void:
 	var cfg := ConfigFile.new()
 	cfg.load(SETTINGS_PATH)  # 既存の設定を保持したまま上書き（無ければ新規作成）
+	cfg.set_value(SECTION, "horde_visible", horde_visible)
 	cfg.set_value(SECTION, "hit_replay", hit_replay_enabled)
 	cfg.set_value(SECTION, "miss_replay", miss_replay_enabled)
 	cfg.set_value(SECTION, "gravity", gravity_enabled)

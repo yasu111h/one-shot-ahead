@@ -146,8 +146,8 @@ func _ready() -> void:
 	_ammo_pips = AmmoPips.new()
 	_ammo_pips.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(_ammo_pips)
-	# デバッグUI（デバッグビルドのみ）：DEBUGボタンでGRAVITY/SPREAD/弾道の切替パネルを開く
-	if OS.is_debug_build:
+	# デバッグUI（Settings.DEBUG_MODEがtrueのときだけ）：DEBUGボタンでGRAVITY/SPREAD/弾道の切替パネルを開く
+	if Settings.DEBUG_MODE:
 		_build_debug_ui()
 	_layout_buttons()
 	get_viewport().size_changed.connect(_layout_buttons)

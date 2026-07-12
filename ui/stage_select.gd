@@ -18,7 +18,9 @@ const NAVY := Color(0.015, 0.025, 0.05)
 const MODE_ART := {"precision": "city_stage", "engage": "harbor_stage", "horde": "desert_stage"}
 
 var _mode_idx := -1               # -1=モード選択画面 / 0..=そのモードのステージ選択画面
+var _visible_modes: Array = []    # 現在ホームに並べているモードのMODESインデックス列
 var _visible_stages: Array = []   # 現在表示中のステージ台帳インデックス列
+var _horde_toggle: Button         # 「HORDE表示」トグル（DEBUG_MODE時のみ・モード画面のみ）
 var _content: Control             # カード群（画面切替のたびに作り直す）
 var _sub: BracketText             # 「SELECT MODE / SELECT STAGE — X」
 var _notice: Label                # 「準備中」表示
@@ -44,6 +46,7 @@ func _ready() -> void:
 	_notice.set_anchors_and_offsets_preset(Control.PRESET_CENTER_BOTTOM)
 	_notice.position += Vector2(0, -76)
 	_build_music_toggle()
+	_build_horde_toggle()
 	_show_modes()
 
 	Music.play_menu()   # メニューBGMへ（プレイから戻った時もここで切り替わる）
@@ -196,7 +199,21 @@ func _show_modes() -> void:
 	row.add_theme_constant_override("separation", 18)
 	center.add_child(row)
 
+	# ホームに並べるモードを決める。HORDE（物量）は隠しモードなので、
+	# DEBUG_MODE かつ「HORDE表示」トグルON のときだけ出す（既定は2モードのみ）。
+	_visible_modes.clear()
 	for i in GameManager.MODES.size():
+		if GameManager.MODES[i].id == "horde" \
+				and not (Settings.DEBUG_MODE and Settings.horde_visible):
+			continue
+		_visible_modes.append(i)
+
+	# DEBUG_MODE のときだけ「HORDE表示 ON/OFF」トグルを見せる
+	if _horde_toggle != null:
+		_horde_toggle.visible = Settings.DEBUG_MODE
+
+	for slot in _visible_modes.size():
+		var i: int = _visible_modes[slot]
 		var m: Dictionary = GameManager.MODES[i]
 		var card := _make_card(Vector2(236, 300))
 		card.modulate = Color(1, 1, 1, 1.0 if m.ready else 0.45)
@@ -271,6 +288,8 @@ func _show_stages(mode_idx: int) -> void:
 	_back_btn.visible = true
 	_bottom.text = "BACK"
 	_bottom.queue_redraw()
+	if _horde_toggle != null:
+		_horde_toggle.visible = false   # ステージ選択画面では隠す
 	for l in _side_deco:
 		l.visible = true
 
@@ -369,6 +388,31 @@ func _build_music_toggle() -> void:
 	refresh.call()
 
 
+## 「HORDE表示 ON/OFF」トグル（DEBUG_MODE時のみ・モード選択画面でのみ表示）。
+## ONにすると隠しモードのHORDEがホームの3枚目として並ぶ。設定は Settings が永続化する
+func _build_horde_toggle() -> void:
+	var btn := Button.new()
+	btn.custom_minimum_size = Vector2(118, 28)
+	btn.add_theme_font_size_override("font_size", 11)
+	btn.add_theme_stylebox_override("normal", _panel_style(1))
+	btn.add_theme_stylebox_override("hover", _panel_style(1))
+	btn.add_theme_stylebox_override("pressed", _panel_style(2, GOLD_BRIGHT))
+	btn.modulate = Color(0.7, 1.0, 0.8, 0.95)   # デバッグ機能なので緑がかった色
+	add_child(btn)
+	btn.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT)
+	btn.position += Vector2(-128, 78)
+	_horde_toggle = btn
+	var refresh := func() -> void:
+		btn.text = "HORDE: %s" % ("ON" if Settings.horde_visible else "OFF")
+	btn.pressed.connect(func() -> void:
+		Settings.horde_visible = not Settings.horde_visible
+		refresh.call()
+		if _mode_idx < 0:   # モード画面にいるなら並びを即更新
+			_show_modes())
+	refresh.call()
+	btn.visible = false   # 実際の表示可否は _show_modes / _show_stages が決める
+
+
 ## カードの土台（枠スタイル付きButton。中身は呼び出し側が重ねる）
 func _make_card(min_size: Vector2) -> Button:
 	var card := Button.new()
@@ -401,7 +445,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		return
 	var n: int = event.keycode - KEY_1
 	if _mode_idx < 0:
-		if n >= 0 and n < GameManager.MODES.size():
+		if n in _visible_modes:   # 隠しモードのキーは効かせない
 			_on_mode_pressed(n)
 	else:
 		if n >= 0 and n < _visible_stages.size():
