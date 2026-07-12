@@ -469,19 +469,19 @@ func _unhandled_input(event: InputEvent) -> void:
 ## タイトルロゴ：「O」を金のレティクルに置き換えた銀の欧文＋金の下線とダイヤ
 class TitleLogo:
 	extends Control
-	const TXT := "NE SHOT AHEAD"
+	const TXT := "LONGSHOT SNIPER"
 
 	func _draw() -> void:
 		var font := ThemeDB.fallback_font
 		var fs := 36
 		var tw := font.get_string_size(TXT, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x
 		var r := 16.0
-		var gap := 7.0
+		var gap := 10.0
 		var total := r * 2.0 + gap + tw
 		var x0 := (size.x - total) * 0.5
 		var cy := size.y * 0.5
 		var c := Vector2(x0 + r, cy)
-		# レティクルの「O」（外輪・内輪・十字ティック）
+		# 先頭のレティクルアイコン（外輪・内輪・十字ティック）
 		draw_arc(c, r, 0, TAU, 48, Color(0.85, 0.72, 0.42), 1.8, true)
 		draw_arc(c, r * 0.52, 0, TAU, 40, Color(1.0, 0.88, 0.55), 4.0, true)
 		for k in 4:
