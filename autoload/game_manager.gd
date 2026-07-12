@@ -56,6 +56,12 @@ const STAGES := [
 		"scene": "res://stages/desert/desert_stage.tscn",
 		"modes": [0, 2],
 	},
+	{
+		"name": "MOUNTAIN RIDGE",
+		"desc": "昼の山岳。峰々に潜む山賊の見張りを撃ち抜け",
+		"scene": "res://stages/mountain/mountain_stage.tscn",
+		"modes": [0],
+	},
 ]
 const SELECT_SCENE := "res://ui/stage_select.tscn"
 
