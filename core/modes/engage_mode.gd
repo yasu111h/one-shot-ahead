@@ -24,10 +24,14 @@ var _hits_taken := 0
 var _detection := 0.0
 var _civilian_down := false
 var _under_fire_t := 0.0
+var _damage_flash: DamageFlash
 
 
 func setup(stage_ref: SniperStage) -> void:
 	super.setup(stage_ref)
+	# 被弾フィードバック（赤ビネット＋全画面フラッシュ）を画面へ
+	_damage_flash = DamageFlash.new()
+	stage.add_child(_damage_flash)
 	# 悪人1体ごとに撃ち返し行動を付与する。既に動く敵（歩行）は遮蔽を作らず、
 	# 静止している敵にはカバー壁＋顔出しサイクルを与える
 	for t in stage.hostiles:
@@ -75,6 +79,8 @@ func tick(delta: float) -> void:
 func _on_player_hit() -> void:
 	_hits_taken += 1
 	_under_fire_t = UNDER_FIRE_HOLD
+	if _damage_flash != null:
+		_damage_flash.flash(_hits_taken, MAX_HITS)  # 赤フラッシュ＋蓄積ビネット
 
 
 func check_fail() -> String:
