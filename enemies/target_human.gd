@@ -262,8 +262,27 @@ func die(hit_impulse: Vector3) -> void:
 
 func _fall(hit_impulse: Vector3) -> void:
 	freeze = false
-	# 上体寄りに撃力を与えて倒す
+	# 倒れきる前に物理スリープすると「宙に浮いた死体」になるため、倒れる間は眠らせない
+	can_sleep = false
+	# 死体はよく滑るように（摩擦ほぼゼロ）。狭い部屋で倒れた先の壁に
+	# 「斜めに立てかかったまま静止」するのを防ぎ、ずり落ちて横たわりきる
+	var pm := PhysicsMaterial.new()
+	pm.friction = 0.05
+	pm.bounce = 0.0
+	physics_material_override = pm
+	linear_damp = 1.2   # 低摩擦の代わりに空気抵抗で減衰＝床の上を滑走し続けない
+	# 上体寄りに撃力を与える＋弾の方向へ確実に転倒する回転を加える。
+	# （撃力だけだと直立カプセルが倒れきらず、崩れ落ちアニメの見た目だけが
+	#   丸まって立ち高さに残る＝空中静止に見えるバグの原因だった）
 	apply_impulse(hit_impulse, Vector3(0, 0.5, 0))
+	var flat := Vector3(hit_impulse.x, 0.0, hit_impulse.z)
+	if flat.length() < 0.01:
+		flat = Vector3.FORWARD
+	apply_torque_impulse(Vector3.UP.cross(flat.normalized()) * 0.8)
+	# 倒れきった頃にスリープを許可（静止した死体が物理CPUを食い続けないように）
+	get_tree().create_timer(3.0, false).timeout.connect(func() -> void:
+		if is_instance_valid(self):
+			can_sleep = true)
 
 
 # ---------------------------------------------------------------- VRMユーティリティ

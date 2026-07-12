@@ -28,10 +28,19 @@ var roof_points: Array = []        # 屋根の上の見張り位置 [Vector3]
 var flat_points: Array = []        # 貨車の荷台の見張り位置 [Vector3]
 var civil_points: Array = []       # 民間人の立ち位置 [Vector3]
 
+var glass_panes: Array = []        # 全客車のガラス(ループで一括修復する)
+
 var _body_mat: StandardMaterial3D
 var _dark_mat: StandardMaterial3D
 var _inner_mat: StandardMaterial3D
 var _seat_mat: StandardMaterial3D
+
+
+## 割れた全ガラスを無傷に戻す(次の周回=別の車両として来るため)
+func reset_all_glass() -> void:
+	for p in glass_panes:
+		if is_instance_valid(p):
+			p.reset()
 
 
 func _physics_process(delta: float) -> void:
@@ -144,6 +153,7 @@ func _build_passenger(z0: float) -> void:
 				add_child(pane)
 				pane.position = Vector3(wall_x, (WIN_Y0 + WIN_Y1) * 0.5, gz)
 				pane.rotation.y = PI * 0.5   # 板の面を±X向きに
+				glass_panes.append(pane)
 
 	# 座席(窓下の低いベンチを両側に)
 	for sx in [-1.0, 1.0]:

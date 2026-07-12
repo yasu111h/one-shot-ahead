@@ -589,8 +589,12 @@ class TargetMarkers:
 	func _process(_delta: float) -> void:
 		queue_redraw()
 
-	## 撃つべき標的（悪人）だけに▼を出す。しかも「今その姿が見えている」時だけ。
-	## 壁の陰に入ると▼が消えるので、窓に現れた一瞬がそのまま撃つ合図になる。
+	## 撃つべき標的（悪人）に▼を出す。位置は常に示す。
+	## 壁の陰に入っている間は▼を消さず半透明にする（見えている時は不透明）＝
+	## 「どこにいるか」は常に分かり、「今撃てるか」は濃さで分かる。
+	const SEEN_ALPHA := 1.0        # 見えている時の濃さ
+	const HIDDEN_ALPHA := 0.4      # 物陰に隠れている時の濃さ（半透明）
+
 	func _draw() -> void:
 		if stage == null or rig == null or rig.camera == null:
 			return
@@ -598,16 +602,16 @@ class TargetMarkers:
 		for t in stage.hostiles:
 			if not is_instance_valid(t) or not t.alive or not t.is_inside_tree():
 				continue
-			if not stage.has_line_of_sight(t.global_position):
-				continue
 			var wp: Vector3 = t.global_position + Vector3(0, MARKER_HEIGHT, 0)
 			if cam.is_position_behind(wp):
-				continue
+				continue   # 画面の後ろ＝そもそも映せない標的だけスキップ
+			# 遮蔽されている間は消さず半透明に
+			var a := SEEN_ALPHA if stage.has_line_of_sight(t.global_position) else HIDDEN_ALPHA
 			var sp := cam.unproject_position(wp)
 			# ▼（下向き三角。縁取り→本体の順で背景に負けないように）
 			var tri := PackedVector2Array([
 				sp + Vector2(-8, -14), sp + Vector2(8, -14), sp + Vector2(0, -2)])
 			var tri_o := PackedVector2Array([
 				sp + Vector2(-10, -16), sp + Vector2(10, -16), sp + Vector2(0, 1)])
-			draw_colored_polygon(tri_o, COL_OUTLINE)
-			draw_colored_polygon(tri, COL)
+			draw_colored_polygon(tri_o, Color(COL_OUTLINE.r, COL_OUTLINE.g, COL_OUTLINE.b, COL_OUTLINE.a * a))
+			draw_colored_polygon(tri, Color(COL.r, COL.g, COL.b, COL.a * a))
