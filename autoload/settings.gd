@@ -25,6 +25,22 @@ var spread_enabled := true:
 		spread_enabled = v
 		_save()
 
+## BGMを鳴らすか
+var music_enabled := true:
+	set(v):
+		music_enabled = v
+		if has_node("/root/Music"):
+			Music.refresh()
+		_save()
+
+## BGM音量(0..1)。将来のスライダー用。既定は控えめ(0.7)
+var music_volume := 0.7:
+	set(v):
+		music_volume = clampf(v, 0.0, 1.0)
+		if has_node("/root/Music"):
+			Music.refresh()
+		_save()
+
 
 func _ready() -> void:
 	_load()
@@ -37,6 +53,8 @@ func _load() -> void:
 	miss_replay_enabled = bool(cfg.get_value(SECTION, "miss_replay", true))
 	gravity_enabled = bool(cfg.get_value(SECTION, "gravity", false))
 	spread_enabled = bool(cfg.get_value(SECTION, "spread", true))
+	music_enabled = bool(cfg.get_value(SECTION, "music", true))
+	music_volume = float(cfg.get_value(SECTION, "music_volume", 0.7))
 
 
 func _save() -> void:
@@ -45,4 +63,6 @@ func _save() -> void:
 	cfg.set_value(SECTION, "miss_replay", miss_replay_enabled)
 	cfg.set_value(SECTION, "gravity", gravity_enabled)
 	cfg.set_value(SECTION, "spread", spread_enabled)
+	cfg.set_value(SECTION, "music", music_enabled)
+	cfg.set_value(SECTION, "music_volume", music_volume)
 	cfg.save(SETTINGS_PATH)

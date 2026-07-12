@@ -57,7 +57,10 @@ func _ready() -> void:
 	_notice.text = " "
 	_root.add_child(_notice)
 
+	_build_music_toggle()
 	_show_modes()
+
+	Music.play_menu()   # メニューBGMへ（プレイから戻った時もここで切り替わる）
 
 
 # ---------------------------------------------------------------- 画面の組み立て
@@ -99,6 +102,23 @@ func _show_stages(mode_idx: int) -> void:
 	var back := _make_button("BACK")
 	back.custom_minimum_size = Vector2(200, 40)
 	back.pressed.connect(_show_modes)
+
+
+## BGMのON/OFFボタン（右上）。設定は Settings が永続化する
+func _build_music_toggle() -> void:
+	var btn := Button.new()
+	btn.custom_minimum_size = Vector2(140, 30)
+	btn.add_theme_font_size_override("font_size", 13)
+	btn.modulate = Color(1, 1, 1, 0.8)
+	add_child(btn)
+	btn.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT)
+	btn.position += Vector2(-152, 16)
+	var refresh := func() -> void:
+		btn.text = "MUSIC: %s" % ("ON" if Settings.music_enabled else "OFF")
+	btn.pressed.connect(func() -> void:
+		Settings.music_enabled = not Settings.music_enabled
+		refresh.call())
+	refresh.call()
 
 
 func _make_button(text: String) -> Button:
