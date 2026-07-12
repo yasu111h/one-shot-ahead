@@ -5,6 +5,9 @@ extends RefCounted
 ## 差がつくのは 反動・ばらつき・装弾数・連射・リロード・弾速（扱いやすさと手数）だけ。
 ## 上位互換は作らない（得意な間合い・モードが違う）。エイム自動補助は商品にしない。
 
+## 各エントリの "color" は武器のアクセント色（銃モデル・HUD武器名・ショップで共通に使う）。
+## "snd" は発砲音のキャラクター（SfxBankが武器別サンプルを合成する）:
+##   body_hi/body_lo=本体スイープの開始/終了Hz・dur=長さ(秒)・sub=低域の芯の量(0..1)
 const WEAPONS := [
 	{
 		"id": "ghost",
@@ -19,6 +22,8 @@ const WEAPONS := [
 		"spread": 1.0,      # ばらつき倍率(SPREADトグルON時の散布角に掛かる)
 		"reload": 1.6,      # リロード時間(秒)
 		"auto": false,      # true=押しっぱなしで連射(フルオート)
+		"color": Color(0.55, 0.58, 0.62),   # ガンメタルグレー
+		"snd": {"body_hi": 700.0, "body_lo": 150.0, "dur": 0.18, "sub": 0.9},
 	},
 	{
 		"id": "hawkeye",
@@ -33,6 +38,8 @@ const WEAPONS := [
 		"spread": 0.45,
 		"reload": 1.8,
 		"auto": false,
+		"color": Color(0.35, 0.62, 0.85),   # 精密のブルー
+		"snd": {"body_hi": 600.0, "body_lo": 105.0, "dur": 0.26, "sub": 1.1},  # 重いドォン
 	},
 	{
 		"id": "raptor",
@@ -47,6 +54,8 @@ const WEAPONS := [
 		"spread": 1.35,
 		"reload": 1.2,
 		"auto": false,
+		"color": Color(0.85, 0.55, 0.25),   # 俊敏のオレンジ
+		"snd": {"body_hi": 950.0, "body_lo": 230.0, "dur": 0.13, "sub": 0.6},  # 軽快なパン
 	},
 	{
 		"id": "tempest",
@@ -61,6 +70,8 @@ const WEAPONS := [
 		"spread": 1.8,
 		"reload": 2.4,
 		"auto": true,
+		"color": Color(0.45, 0.72, 0.35),   # ミリタリーグリーン
+		"snd": {"body_hi": 880.0, "body_lo": 260.0, "dur": 0.10, "sub": 0.5},  # 連射映えの短音
 	},
 ]
 

@@ -18,6 +18,7 @@ var _reticle: DynamicReticle
 var _markers: TargetMarkers
 var _enemies_label: Label         # 左上：残り敵数「▼ N」だけ
 var _ammo_pips: AmmoPips          # 右下FIREの上：マガジン残弾を弾アイコンの列で表示
+var _weapon_label: Label          # 残弾ピップの上：装備武器名（アクセント色）
 var _reload_label: Label          # リロード中の表示（stage.reloading連動）
 var _wind_label: Label
 var _range_label: Label           # 測距（レティクル脇に小さく）
@@ -135,6 +136,12 @@ func _ready() -> void:
 	_ammo_pips = AmmoPips.new()
 	_ammo_pips.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(_ammo_pips)
+	# 武器名（残弾ピップの上・装備武器のアクセント色で「どの銃か」が一目で分かる）
+	_weapon_label = _make_label(str(stage.weapon.get("name", "")), 12,
+		Control.PRESET_TOP_LEFT, Vector2.ZERO)
+	_weapon_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_weapon_label.modulate = stage.weapon.get("color", Color.WHITE).lightened(0.35)
+	_add_outline(_weapon_label, 4)
 	_reload_label = _make_center_label("RELOADING...", 15, Control.PRESET_CENTER, Vector2(0, 72))
 	_reload_label.modulate = Color(1.0, 0.75, 0.4, 0.95)
 	_reload_label.visible = false
@@ -301,6 +308,10 @@ func _layout_buttons() -> void:
 		_ammo_pips.position = Vector2(fire_c.x - _ammo_pips.size.x * 0.5,
 			fire_c.y - 76.0 - 34.0)
 		_ammo_pips.queue_redraw()
+	# 武器名は残弾ピップのさらに上（装備武器のアクセント色）
+	if _weapon_label != null and _ammo_pips != null:
+		_weapon_label.size = Vector2(200, 16)
+		_weapon_label.position = Vector2(fire_c.x - 100.0, _ammo_pips.position.y - 30.0)
 
 
 func _place_button(btn: TouchScreenButton, center: Vector2) -> void:
@@ -319,6 +330,7 @@ func _process(delta: float) -> void:
 	_zoom_label.visible = scoped and not replay
 	_enemies_label.visible = not replay
 	_ammo_pips.visible = not replay
+	_weapon_label.visible = not replay
 	_range_label.visible = not replay
 	_menu_btn.visible = not replay
 	_hit_chip.visible = not replay
