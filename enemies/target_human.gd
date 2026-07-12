@@ -129,6 +129,9 @@ func _build_model() -> void:
 			lib.add_animation("Idle", idle)
 		if walk != null:
 			lib.add_animation("Walk", walk)
+		var shot := _shared_shot_anim(skel)
+		if shot != null:
+			lib.add_animation("Shot", shot)
 		if idle != null:
 			_ap.play("Idle")
 			# 個体ごとに再生位置をずらす(全員が同じ拍で揺れる「量産感」を消す)
@@ -155,6 +158,47 @@ func _shared_anim(path: String, skel: Skeleton3D) -> Animation:
 		baked.loop_mode = Animation.LOOP_LINEAR
 		_anim_cache[path] = baked
 	return baked
+
+
+## 被弾アニメ「撃たれて崩れ落ちる」をコードで作る(Mixamoに頼らず全標的で共有)。
+## のけぞり(0.12s)→膝が折れて上体が前へ崩れる(0.5s)→脱力しきる(0.9s)。
+## 物理転倒(RigidBody)と同時に再生することで、棒のように倒れるマネキン感を消す
+static func _build_shot_anim(skel: Skeleton3D) -> Animation:
+	# ボーンごとの[時刻, X軸回転(rad)]キー。+が前屈・-がのけぞり
+	var keys := {
+		"Spine": [[0.12, -0.30], [0.45, 0.40], [0.9, 0.55]],
+		"Chest": [[0.12, -0.35], [0.45, 0.30], [0.9, 0.45]],
+		"Head": [[0.12, -0.45], [0.5, 0.35], [0.9, 0.5]],
+		"LeftUpperLeg": [[0.4, -0.55], [0.9, -0.75]],
+		"RightUpperLeg": [[0.4, -0.40], [0.9, -0.65]],
+		"LeftLowerLeg": [[0.4, 1.25], [0.9, 1.55]],
+		"RightLowerLeg": [[0.4, 1.05], [0.9, 1.45]],
+		"LeftUpperArm": [[0.12, -0.35], [0.7, 0.25]],
+		"RightUpperArm": [[0.12, -0.35], [0.7, 0.25]],
+	}
+	var anim := Animation.new()
+	anim.length = 0.95
+	anim.loop_mode = Animation.LOOP_NONE
+	for bone in keys:
+		var idx := skel.find_bone(bone)
+		if idx < 0:
+			continue
+		var rest := skel.get_bone_rest(idx).basis.get_rotation_quaternion()
+		var tr := anim.add_track(Animation.TYPE_ROTATION_3D)
+		anim.track_set_path(tr, "%s:%s" % [TGT_SKEL_PATH, bone])
+		for k in keys[bone]:
+			anim.rotation_track_insert_key(tr, k[0], rest * Quaternion(Vector3.RIGHT, k[1]))
+	return anim
+
+
+## 被弾アニメの共有キャッシュ(レストポーズは全VRMで同一なので1回だけ作る)
+func _shared_shot_anim(skel: Skeleton3D) -> Animation:
+	if _anim_cache.has("__shot"):
+		return _anim_cache["__shot"]
+	var a := _build_shot_anim(skel)
+	if a != null:
+		_anim_cache["__shot"] = a
+	return a
 
 
 ## 従来のカプセル見た目(VRMが読めない時のフォールバック)
@@ -202,11 +246,16 @@ func die(hit_impulse: Vector3) -> void:
 		return
 	alive = false
 	velocity_estimate = Vector3.ZERO
-	# 全身をグレーに沈めてアニメを止める(こと切れた表現)
+	# 全身をグレーに沈める(こと切れた表現)
 	for m in _mats:
 		m.albedo_color = Color(0.32, 0.31, 0.30)
+	# 被弾アニメ「のけぞり→膝から崩れ落ちる」。0.1秒ブレンドで歩き/待機から自然に繋ぐ。
+	# 同時に物理転倒(RigidBody)が始まる=崩れながら倒れ込む
 	if _ap != null:
-		_ap.pause()
+		if _ap.has_animation("Shot"):
+			_ap.play("Shot", 0.1)
+		else:
+			_ap.pause()
 	_fall.call_deferred(hit_impulse)
 	died.emit(self)
 
