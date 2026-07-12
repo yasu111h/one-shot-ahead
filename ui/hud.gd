@@ -16,26 +16,31 @@ var scope: ScopeOverlay
 
 var _reticle: DynamicReticle
 var _markers: TargetMarkers
-var _ammo_label: Label
+var _enemies_label: Label         # 左上：残り敵数「▼ N」だけ
+var _ammo_pips: AmmoPips          # 右下FIREの上：残弾を弾アイコンの列で表示
 var _wind_label: Label
-var _targets_label: Label
-var _hint_label: Label
-var _mission_label: Label
-var _range_label: Label
-var _zoom_label: Label
+var _range_label: Label           # 測距（レティクル脇に小さく）
+var _zoom_label: Label            # 倍率（SCOPEボタンの下に「1x」）
 var _stamp: Label
 var _center_msg: Label
+var _intro_label: Label           # 開始時だけ中央に出すミッション文（数秒でフェード）
 var _retry_btn: Button
 var _select_btn: Button
-var _menu_btn: Button
-var _miss_toggle: Button
-var _gravity_toggle: Button
-var _spread_toggle: Button
+var _menu_btn: Button             # 右上：メニュー「≡」
+var _hit_chip: Button             # 右上：命中リプレイ ON/OFF チップ
+var _miss_chip: Button            # 右上：ミスリプレイ ON/OFF チップ
 var _mode_lines: Label            # モード固有のHUD行（hud_extra().lines の受け皿）
 var _mode_gauges: ModeGauges      # モード固有のゲージ（hud_extra().gauges の受け皿）
 var _fire_btn: TouchScreenButton
 var _scope_btn: TouchScreenButton
+# --- デバッグUI（OS.is_debug_build のときだけ生成。DEBUGボタンでパネル開閉） ---
+var _debug_btn: Button
+var _debug_panel: PanelContainer
+var _gravity_toggle: Button
+var _spread_toggle: Button
+var _traj_toggle: Button
 var _stamp_t := -1.0
+var _intro_t := 0.0               # 開始からの経過（ミッション文フェード用）
 
 
 func _ready() -> void:
@@ -60,34 +65,33 @@ func _ready() -> void:
 	_reticle.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(_reticle)
 	_reticle.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	# ラベル類
-	_targets_label = _make_label("TARGETS 0/0", 15, Control.PRESET_TOP_LEFT, Vector2(12, 8))
-	_hint_label = _make_label(
-		"AIM: R-DRAG / FIRE: L-CLICK / SCOPE: Q or WHEEL / MENU: ESC",
-		10, Control.PRESET_TOP_LEFT, Vector2(12, 30))
-	if OS.is_debug_build:
-		# 弾道デバッグ（trajectory_debug.gd）の入口をヒントに出す（デバッグビルド限定）
-		_hint_label.text += " / TRAJ DEBUG: F3 (TAB: VIEW)"
-	_hint_label.modulate = Color(1, 1, 1, 0.55)
-	_mission_label = _make_label(mission, 13, Control.PRESET_TOP_LEFT, Vector2(12, 48))
-	_mission_label.modulate = Color(1.0, 0.72, 0.45, 0.95)
-	_mission_label.visible = mission != ""
-	# モード固有HUDの共通受け皿（GameMode.hud_extra() のデータを毎フレーム描く。
-	# モード実装（B応戦/C物量…）は hud.gd を触らずここに乗せる）
-	_mode_lines = _make_label("", 13, Control.PRESET_TOP_LEFT, Vector2(12, 68))
+	# 左上：残り敵数「▼ N」だけ（長いミッション文・操作ヒントは常時表示しない）
+	_enemies_label = _make_label("▼ 0", 20, Control.PRESET_TOP_LEFT, Vector2(14, 8))
+	_enemies_label.modulate = Color(1.0, 0.35, 0.28, 0.95)
+	_add_outline(_enemies_label, 5)
+	# モード固有HUDの共通受け皿（GameMode.hud_extra() のデータを毎フレーム描く）
+	_mode_lines = _make_label("", 13, Control.PRESET_TOP_LEFT, Vector2(14, 40))
 	_mode_lines.modulate = Color(0.85, 0.92, 1.0, 0.95)
+	_add_outline(_mode_lines, 4)
 	_mode_lines.visible = false
 	_mode_gauges = ModeGauges.new()
 	_mode_gauges.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(_mode_gauges)
 	_mode_gauges.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_wind_label = _make_center_label("WIND 0.0 m/s", 16, Control.PRESET_CENTER_TOP, Vector2(0, 8))
-	# 風が弾に影響しない設定（直線弾道）の間は風HUDを出さない
 	_wind_label.visible = Ballistics.WIND_ENABLED
-	_ammo_label = _make_label("AMMO 100/100", 16, Control.PRESET_TOP_RIGHT, Vector2(-140, 8))
-	_range_label = _make_center_label("--- m", 15, Control.PRESET_CENTER, Vector2(0, 46))
-	_zoom_label = _make_center_label("4x", 18, Control.PRESET_CENTER, Vector2(120, -140))
-	_zoom_label.visible = false
+	# 測距：レティクルのすぐ右下に小さく（画面中央の渋滞を避ける）
+	_range_label = _make_label("", 15, Control.PRESET_CENTER, Vector2(30, 26))
+	_add_outline(_range_label, 4)
+	# 倍率：SCOPEボタンの下に「1x」（位置は _layout_buttons で決める）
+	_zoom_label = _make_label("1x", 15, Control.PRESET_BOTTOM_LEFT, Vector2.ZERO)
+	_zoom_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_add_outline(_zoom_label, 4)
+	# 開始時だけ中央に出すミッション文（数秒でフェード。以降は残り敵数だけ）
+	_intro_label = _make_center_label(mission, 22, Control.PRESET_CENTER, Vector2(0, -110))
+	_intro_label.modulate = Color(1.0, 0.72, 0.45, 0.95)
+	_add_outline(_intro_label, 5)
+	_intro_label.visible = mission != ""
 	_stamp = _make_center_label("", 44, Control.PRESET_CENTER, Vector2(0, 95))
 	_stamp.modulate = STAMP_HIT_COLOR
 	_stamp.visible = false
@@ -113,57 +117,38 @@ func _ready() -> void:
 	_select_btn.position += Vector2(0, 74)
 	_select_btn.visible = false
 	_select_btn.pressed.connect(func() -> void: GameManager.goto_select())
-	# 常設の「MENU」ボタン（右上・ミスリプレイトグルの下）
-	_menu_btn = Button.new()
-	_menu_btn.text = "MENU"
-	_menu_btn.custom_minimum_size = Vector2(150, 26)
-	_menu_btn.add_theme_font_size_override("font_size", 11)
-	_menu_btn.modulate = Color(1, 1, 1, 0.75)
-	add_child(_menu_btn)
+	# 右上：メニュー「≡」（コンパクト・半透明）
+	_menu_btn = _make_chip("≡", Vector2(44, 34))
+	_menu_btn.add_theme_font_size_override("font_size", 22)
 	_menu_btn.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT)
-	_menu_btn.position += Vector2(-158, 66)
+	_menu_btn.position += Vector2(-56, 10)
 	_menu_btn.pressed.connect(func() -> void: GameManager.goto_select())
-	# ミスリプレイ設定トグル（右上・タップ/クリックで切替。値はSettingsが永続化）
-	_miss_toggle = Button.new()
-	_miss_toggle.custom_minimum_size = Vector2(150, 26)
-	_miss_toggle.add_theme_font_size_override("font_size", 11)
-	_miss_toggle.modulate = Color(1, 1, 1, 0.75)
-	add_child(_miss_toggle)
-	_miss_toggle.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT)
-	_miss_toggle.position += Vector2(-158, 34)
-	_miss_toggle.pressed.connect(func() -> void:
+	# 右上：リプレイ切替チップ2つ（命中／ミス。プレイ中いつでも個別ON/OFF・値は永続化）
+	_hit_chip = _make_chip("HIT", Vector2(66, 30))
+	_hit_chip.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT)
+	_hit_chip.position += Vector2(-140, 52)
+	_hit_chip.pressed.connect(func() -> void:
+		Settings.hit_replay_enabled = not Settings.hit_replay_enabled
+		_update_chips())
+	_miss_chip = _make_chip("MISS", Vector2(66, 30))
+	_miss_chip.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT)
+	_miss_chip.position += Vector2(-70, 52)
+	_miss_chip.pressed.connect(func() -> void:
 		Settings.miss_replay_enabled = not Settings.miss_replay_enabled
-		_update_miss_toggle())
-	_update_miss_toggle()
-	# 重力弾道トグル（右上・MENUの下）。ONで弾が放物線を描き狙点より下に落ちる
-	_gravity_toggle = Button.new()
-	_gravity_toggle.custom_minimum_size = Vector2(150, 26)
-	_gravity_toggle.add_theme_font_size_override("font_size", 11)
-	_gravity_toggle.modulate = Color(1, 1, 1, 0.75)
-	add_child(_gravity_toggle)
-	_gravity_toggle.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT)
-	_gravity_toggle.position += Vector2(-158, 98)
-	_gravity_toggle.pressed.connect(func() -> void:
-		Settings.gravity_enabled = not Settings.gravity_enabled
-		_update_gravity_toggle())
-	_update_gravity_toggle()
-	# 弾ばらつきトグル（右上・GRAVITYの下）。ONで撃った弾が距離に応じてランダムにずれる
-	_spread_toggle = Button.new()
-	_spread_toggle.custom_minimum_size = Vector2(150, 26)
-	_spread_toggle.add_theme_font_size_override("font_size", 11)
-	_spread_toggle.modulate = Color(1, 1, 1, 0.75)
-	add_child(_spread_toggle)
-	_spread_toggle.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT)
-	_spread_toggle.position += Vector2(-158, 130)
-	_spread_toggle.pressed.connect(func() -> void:
-		Settings.spread_enabled = not Settings.spread_enabled
-		_update_spread_toggle())
-	_update_spread_toggle()
-	# 操作ボタン（マルチタッチ対応のTouchScreenButton）
-	_fire_btn = _make_touch_button("FIRE", 52.0, Color(1.0, 0.55, 0.45, 0.9))
+		_update_chips())
+	_update_chips()
+	# 操作ボタン（マルチタッチ対応のTouchScreenButton）。FIREは大きく（狙いながら押しやすく）
+	_fire_btn = _make_touch_button("FIRE", 76.0, Color(1.0, 0.4, 0.32, 0.92))
 	_fire_btn.pressed.connect(func() -> void: stage.request_fire())
-	_scope_btn = _make_touch_button("SCOPE", 44.0, Color(0.65, 0.85, 1.0, 0.9))
+	_scope_btn = _make_touch_button("SCOPE", 46.0, Color(0.65, 0.85, 1.0, 0.9))
 	_scope_btn.pressed.connect(func() -> void: rig.cycle_zoom())
+	# 残弾ピップ（FIREの上）
+	_ammo_pips = AmmoPips.new()
+	_ammo_pips.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(_ammo_pips)
+	# デバッグUI（デバッグビルドのみ）：DEBUGボタンでGRAVITY/SPREAD/弾道の切替パネルを開く
+	if OS.is_debug_build:
+		_build_debug_ui()
 	_layout_buttons()
 	get_viewport().size_changed.connect(_layout_buttons)
 
@@ -186,6 +171,85 @@ func _make_center_label(text: String, font_size: int, preset: int, offset: Vecto
 	return l
 
 
+## ラベルに黒縁取りを付ける（夜景の窓明かりに白文字が沈まないように）
+func _add_outline(l: Label, size: int) -> void:
+	l.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.85))
+	l.add_theme_constant_override("outline_size", size)
+
+
+## 半透明の角丸チップ風ボタン（メニュー・リプレイ切替・デバッグ用）
+func _make_chip(text: String, min_size: Vector2) -> Button:
+	var b := Button.new()
+	b.text = text
+	b.custom_minimum_size = min_size
+	b.add_theme_font_size_override("font_size", 12)
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = Color(0.08, 0.09, 0.12, 0.55)
+	sb.set_corner_radius_all(6)
+	sb.set_content_margin_all(4)
+	var sb_hover := sb.duplicate()
+	sb_hover.bg_color = Color(0.16, 0.18, 0.22, 0.7)
+	b.add_theme_stylebox_override("normal", sb)
+	b.add_theme_stylebox_override("hover", sb_hover)
+	b.add_theme_stylebox_override("pressed", sb_hover)
+	b.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
+	add_child(b)
+	return b
+
+
+## デバッグUIを構築（DEBUGボタン＋開閉パネル。GRAVITY/SPREAD/弾道デバッグをここに集約）。
+## リリースビルドでは呼ばれない（プレイヤーには見えない）
+func _build_debug_ui() -> void:
+	_debug_btn = _make_chip("DEBUG", Vector2(66, 26))
+	_debug_btn.modulate = Color(0.7, 1.0, 0.8, 0.85)
+	_debug_btn.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT)
+	_debug_btn.position += Vector2(-140, 92)
+	_debug_btn.pressed.connect(func() -> void:
+		_debug_panel.visible = not _debug_panel.visible)
+	# パネル本体（縦に3ボタン＋操作ヒント）
+	_debug_panel = PanelContainer.new()
+	var pstyle := StyleBoxFlat.new()
+	pstyle.bg_color = Color(0.04, 0.05, 0.07, 0.82)
+	pstyle.set_corner_radius_all(6)
+	pstyle.set_content_margin_all(8)
+	_debug_panel.add_theme_stylebox_override("panel", pstyle)
+	_debug_panel.visible = false
+	add_child(_debug_panel)
+	_debug_panel.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT)
+	_debug_panel.position += Vector2(-206, 124)
+	var vb := VBoxContainer.new()
+	vb.add_theme_constant_override("separation", 4)
+	_debug_panel.add_child(vb)
+	_gravity_toggle = _make_debug_row(vb)
+	_gravity_toggle.pressed.connect(func() -> void:
+		Settings.gravity_enabled = not Settings.gravity_enabled
+		_update_debug_toggles())
+	_spread_toggle = _make_debug_row(vb)
+	_spread_toggle.pressed.connect(func() -> void:
+		Settings.spread_enabled = not Settings.spread_enabled
+		_update_debug_toggles())
+	_traj_toggle = _make_debug_row(vb)
+	_traj_toggle.pressed.connect(func() -> void:
+		stage.debug.toggle_enabled()
+		_update_debug_toggles())
+	var hint := Label.new()
+	hint.text = "TRAJ: F3 / VIEW: TAB"
+	hint.add_theme_font_size_override("font_size", 10)
+	hint.modulate = Color(1, 1, 1, 0.5)
+	vb.add_child(hint)
+	_update_debug_toggles()
+
+
+## デバッグパネル内の1行ボタン（幅そろえ・左寄せ）
+func _make_debug_row(vb: VBoxContainer) -> Button:
+	var b := Button.new()
+	b.custom_minimum_size = Vector2(180, 24)
+	b.add_theme_font_size_override("font_size", 11)
+	b.alignment = HORIZONTAL_ALIGNMENT_LEFT
+	vb.add_child(b)
+	return b
+
+
 func _make_touch_button(text: String, radius: float, color: Color) -> TouchScreenButton:
 	var btn := TouchScreenButton.new()
 	# 円形グラデーションテクスチャを生成（半透明の丸ボタン）
@@ -203,17 +267,22 @@ func _make_touch_button(text: String, radius: float, color: Color) -> TouchScree
 	tex.width = int(radius * 2.0)
 	tex.height = int(radius * 2.0)
 	btn.texture_normal = tex
-	btn.modulate = color
+	# self_modulate はこのノードのテクスチャだけを着色し、子ラベルには波及しない
+	# （modulate だと FIRE 文字まで暗く染まって読めなくなる）
+	btn.self_modulate = color
 	var shape := CircleShape2D.new()
 	shape.radius = radius
 	btn.shape = shape
 	btn.shape_centered = true
 	btn.set_meta("radius", radius)
 	add_child(btn)
-	# ボタン内ラベル
+	# ボタン内ラベル（白＋黒縁取りではっきり）
 	var l := Label.new()
 	l.text = text
-	l.add_theme_font_size_override("font_size", 13)
+	l.add_theme_font_size_override("font_size", 20 if radius >= 70.0 else 14)
+	l.add_theme_color_override("font_color", Color(1, 1, 1, 0.95))
+	l.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.7))
+	l.add_theme_constant_override("outline_size", 5)
 	l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	l.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	l.size = Vector2(radius * 2.0, radius * 2.0)
@@ -225,8 +294,21 @@ func _make_touch_button(text: String, radius: float, color: Color) -> TouchScree
 
 func _layout_buttons() -> void:
 	var vs := get_viewport().get_visible_rect().size
-	_place_button(_fire_btn, Vector2(vs.x - 74.0, vs.y - 74.0))
-	_place_button(_scope_btn, Vector2(74.0, vs.y - 66.0))
+	var fire_c := Vector2(vs.x - 100.0, vs.y - 100.0)
+	_place_button(_fire_btn, fire_c)
+	var scope_c := Vector2(78.0, vs.y - 84.0)
+	_place_button(_scope_btn, scope_c)
+	# 倍率ラベルはSCOPEボタンの真下
+	if _zoom_label != null:
+		_zoom_label.set_anchors_and_offsets_preset(Control.PRESET_TOP_LEFT)
+		_zoom_label.position = scope_c + Vector2(-20, 52)
+		_zoom_label.size = Vector2(40, 20)
+	# 残弾ピップはFIREボタンの真上（受け皿トレイぶんの余白を見て少し上げる）
+	if _ammo_pips != null:
+		_ammo_pips.size = Vector2((AmmoPips.PIP_COUNT - 1) * AmmoPips.STEP + 9.0, 20)
+		_ammo_pips.position = Vector2(fire_c.x - _ammo_pips.size.x * 0.5,
+			fire_c.y - 76.0 - 34.0)
+		_ammo_pips.queue_redraw()
 
 
 func _place_button(btn: TouchScreenButton, center: Vector2) -> void:
@@ -243,10 +325,16 @@ func _process(delta: float) -> void:
 	_markers.visible = not replay
 	_reticle.scoped = scoped
 	_zoom_label.visible = scoped and not replay
-	_miss_toggle.visible = not replay
-	_gravity_toggle.visible = not replay
-	_spread_toggle.visible = not replay
+	_enemies_label.visible = not replay
+	_ammo_pips.visible = not replay
+	_range_label.visible = not replay
 	_menu_btn.visible = not replay
+	_hit_chip.visible = not replay
+	_miss_chip.visible = not replay
+	if _debug_btn != null:
+		_debug_btn.visible = not replay
+		if replay:
+			_debug_panel.visible = false
 	# モード固有HUD（hud_extra）を反映
 	var extra: Dictionary = stage.mode.hud_extra() if stage.mode != null else {}
 	var lines: Array = extra.get("lines", [])
@@ -257,8 +345,16 @@ func _process(delta: float) -> void:
 	_mode_gauges.queue_redraw()
 	# 倍率表示は連続値（ピンチズーム対応。「4.0x」→「4x」に整形）
 	_zoom_label.text = String.num(rig.magnification, 1).trim_suffix(".0") + "x"
-	_ammo_label.text = "AMMO %d/%d" % [stage.ammo, stage.max_ammo]
-	_targets_label.text = "TARGETS %d/%d" % [stage.hits, stage.hostiles.size()]
+	# 残弾ピップ・残り敵数
+	_ammo_pips.set_ammo(stage.ammo)
+	var remaining: int = maxi(stage.hostiles.size() - stage.hits, 0)
+	_enemies_label.text = "▼ %d" % remaining
+	# 開始時のミッション文フェード（3秒表示→0.8秒でフェードアウト）
+	if _intro_label.visible:
+		_intro_t += delta
+		_intro_label.modulate.a = 0.95 - clampf((_intro_t - 3.0) / 0.8, 0.0, 0.95)
+		if _intro_t > 3.8:
+			_intro_label.visible = false
 	# 風表示（矢印の向きと本数で強さを表現）。風が弾に効く設定の時だけ
 	if _wind_label.visible:
 		var w: float = stage.wind_speed
@@ -266,8 +362,8 @@ func _process(delta: float) -> void:
 			else "<".repeat(clampi(int(ceil(absf(w) / 1.5)), 1, 4))
 		_wind_label.text = "WIND %s %.1f m/s" % [arrows, absf(w)]
 		_wind_label.modulate = Color(1.0, 0.75, 0.4) if absf(w) > 3.5 else Color(0.92, 0.9, 0.85)
-	# 測距
-	_range_label.text = ("%d m" % int(range_distance)) if range_distance > 0.0 else "--- m"
+	# 測距（レティクル脇。有効な時だけ）
+	_range_label.text = ("%d m" % int(range_distance)) if range_distance > 0.0 else ""
 	# 距離スタンプのアニメーション（time_scaleの影響を受けない実時間で動かす）
 	if _stamp.visible:
 		var rdt := delta / maxf(Engine.time_scale, 0.001)
@@ -315,18 +411,25 @@ func show_miss_stamp() -> void:
 	show_stamp("MISS", STAMP_MISS_COLOR)
 
 
-## ミスリプレイ設定トグルの表記を現在の設定値に合わせる
-func _update_miss_toggle() -> void:
-	_miss_toggle.text = "MISS REPLAY: %s" % ("ON" if Settings.miss_replay_enabled else "OFF")
+## リプレイ切替チップ（HIT/MISS）の表記と色を現在の設定に合わせる。
+## ●=ON（明るい）／○=OFF（暗い）で状態を一目で
+func _update_chips() -> void:
+	var on := Color(0.75, 0.95, 1.0, 0.95)
+	var off := Color(1, 1, 1, 0.4)
+	_hit_chip.text = "HIT %s" % ("●" if Settings.hit_replay_enabled else "○")
+	_hit_chip.modulate = on if Settings.hit_replay_enabled else off
+	_miss_chip.text = "MISS %s" % ("●" if Settings.miss_replay_enabled else "○")
+	_miss_chip.modulate = on if Settings.miss_replay_enabled else off
 
 
-## 重力弾道トグルの表記を現在の設定値に合わせる
-func _update_gravity_toggle() -> void:
+## デバッグパネル内トグルの表記（GRAVITY/SPREAD/TRAJ）
+func _update_debug_toggles() -> void:
+	if _gravity_toggle == null:
+		return
 	_gravity_toggle.text = "GRAVITY: %s" % ("ON" if Settings.gravity_enabled else "OFF")
-
-
-func _update_spread_toggle() -> void:
 	_spread_toggle.text = "SPREAD: %s" % ("ON" if Settings.spread_enabled else "OFF")
+	var traj_on: bool = stage.debug != null and stage.debug.enabled
+	_traj_toggle.text = "TRAJECTORY: %s" % ("ON" if traj_on else "OFF")
 
 
 func show_clear() -> void:
@@ -344,6 +447,44 @@ func show_fail(msg: String) -> void:
 	_center_msg.visible = true
 	_retry_btn.visible = true
 	_select_btn.visible = true
+
+
+## 残弾ピップ：弾アイコンの横一列で残弾を表す（数字の「AMMO 100/100」を廃止）。
+## 表示は最大 PIP_COUNT 個。ammoがそれ以上なら全部満杯、終盤に減ると右から空になる。
+## ※ 将来「弾切れで自動リロード」の弾倉制になっても、そのままの見た目で使える設計。
+class AmmoPips:
+	extends Control
+
+	const PIP_COUNT := 8       # 表示する弾アイコンの数
+	const STEP := 16.0         # アイコン間の横ピッチ(px)
+	const PAD := 8.0           # 受け皿トレイの左右・上下パディング
+	const COL_FULL := Color(1.0, 0.92, 0.72, 0.98)   # 実弾（真鍮＋弾頭）
+	const COL_EMPTY := Color(1, 1, 1, 0.18)          # 撃った分（空スロット）
+	const COL_TRAY := Color(0.0, 0.0, 0.0, 0.4)      # 受け皿（背景に負けないための暗い下地）
+
+	var _ammo := 0
+
+	func set_ammo(a: int) -> void:
+		if a != _ammo:
+			_ammo = a
+			queue_redraw()
+
+	func _draw() -> void:
+		# 受け皿（暗い角丸トレイ）＝どんな背景でも弾が読める
+		var tray := Rect2(Vector2(-PAD, -PAD), size + Vector2(PAD * 2.0, PAD * 2.0))
+		draw_rect(tray, COL_TRAY, true)
+		var full := clampi(_ammo, 0, PIP_COUNT)
+		for i in PIP_COUNT:
+			_draw_bullet(Vector2(i * STEP, 0), COL_FULL if i < full else COL_EMPTY)
+
+	## 弾1発（下＝真鍮ケース、上＝尖った弾頭）を縦長で描く
+	func _draw_bullet(o: Vector2, col: Color) -> void:
+		var w := 9.0
+		var case_h := 13.0
+		var tip_h := 7.0
+		draw_rect(Rect2(o + Vector2(0, tip_h), Vector2(w, case_h)), col)  # ケース
+		draw_colored_polygon(PackedVector2Array([                          # 弾頭（三角）
+			o + Vector2(0, tip_h), o + Vector2(w, tip_h), o + Vector2(w * 0.5, 0)]), col)
 
 
 ## モード固有ゲージの共通描画（hud_extra().gauges）。画面下中央に横バーを縦に並べる。

@@ -363,8 +363,10 @@ func _do_fire() -> void:
 	sfx.play_shot()
 	mode.on_fire()
 	# 悪人への命中確定弾は毎回バレットカムになる（民間人への誤射は演出せず実弾で見せる）
-	# ※ モードが replay_enabled=false の間は抑制（C物量の要所リプレイ等）
-	if not predicted.is_empty() and predicted.target.hostile and replay_enabled:
+	# ※ モードが replay_enabled=false の間、またはユーザーがHITリプレイをOFFにした間は抑制。
+	#   OFF時は実弾が飛んで着弾で倒す（キルカムなしの即時撃破）
+	if not predicted.is_empty() and predicted.target.hostile and replay_enabled \
+			and Settings.hit_replay_enabled:
 		_start_replay(start, predicted, dir)
 		return
 	# ミス弾（何にも当たらない弾）も、設定ONならバレットカムで見送る
