@@ -17,6 +17,7 @@ func _ready() -> void:
 	_s["hit"] = _wav(_gen_hit())
 	_s["headshot"] = _wav(_gen_headshot())
 	_s["glass"] = _wav(_gen_glass())
+	_s["impact"] = _wav(_gen_impact())
 	for i in POOL:
 		var p := AudioStreamPlayer.new()
 		p.bus = "Master"
@@ -42,6 +43,11 @@ func play_headshot() -> void:
 ## ガラスの割れる音（パリンッ）
 func play_glass() -> void:
 	_play("glass", randf_range(-8.0, -6.0), randf_range(0.92, 1.08))
+
+
+## 地形などガラス以外への着弾音（小さめの「ドスッ」＝土・壁の当たり）
+func play_impact() -> void:
+	_play("impact", randf_range(-15.0, -13.0), randf_range(0.9, 1.1))
 
 
 func _play(sfx_name: String, vol_db: float, pitch: float) -> void:
@@ -132,6 +138,22 @@ func _gen_glass() -> PackedFloat32Array:
 		var sparkle := (randf() * 2.0 - 1.0) * exp(-prog * 7.0) * 0.18 \
 			* (0.5 + 0.5 * sin(TAU * 90.0 * t))
 		out[i] = (crack + ring + sparkle) * 0.55
+	return out
+
+
+## 地形着弾: 弱く鈍い「ドスッ」＋土埃のさらっとしたノイズ（壁・地面へのミス弾用・控えめ）
+func _gen_impact() -> PackedFloat32Array:
+	var dur := 0.14
+	var out := _blank(dur)
+	var pt := 0.0
+	for i in out.size():
+		var prog := float(i) / out.size()
+		# 低い鈍い芯（150→70Hz を素早く減衰＝硬い面に当たった鈍い当たり）
+		pt += TAU * lerpf(150.0, 70.0, prog) / RATE
+		var thud := sin(pt) * exp(-prog * 14.0)
+		# 土埃・破片のさらっとしたノイズ（高域を残さず速やかに消える）
+		var noise := (randf() * 2.0 - 1.0) * 0.4 * exp(-prog * 24.0)
+		out[i] = (thud * 0.7 + noise * 0.5) * 0.45
 	return out
 
 

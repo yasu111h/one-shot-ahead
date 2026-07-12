@@ -429,6 +429,7 @@ func _start_miss_replay(start: Vector3, dir: Vector3) -> void:
 			else:
 				fx.impact_burst(point, normal)
 				_spawn_impact_dust(point)
+				sfx.play_impact()  # ガラス以外の着弾にも小さな音
 		hud.show_miss_stamp()
 		mode.on_miss(),
 		Ballistics.effective_accel(wind_accel), impact.time)
@@ -633,6 +634,7 @@ func _on_bullet_hit(result: Dictionary, bullet: Bullet) -> void:
 		else:
 			fx.impact_burst(result.position, normal)
 			_spawn_impact_dust(result.position)
+			sfx.play_impact()  # ガラス以外の着弾にも小さな音
 		mode.on_miss()
 		_check_end()
 
