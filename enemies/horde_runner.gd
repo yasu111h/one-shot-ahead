@@ -41,8 +41,16 @@ func revive(pos: Vector3) -> void:
 	advancing = false
 	velocity_estimate = Vector3.ZERO
 	_weave_phase = randf() * TAU
-	_body_mat.albedo_color = Color(0.75, 0.10, 0.08)
-	_head_mat.albedo_color = Color(0.95, 0.32, 0.22)
+	# 死亡でグレーに沈めた全身マテリアルを敵の赤へ戻す。
+	# ※ TargetHumanがVRM化され旧 _body_mat/_head_mat は廃止され _mats 配列に統一された。
+	#   これを参照したままだったためHordeRunnerがコンパイルできず、C物量モードで
+	#   敵が1体も湧かない＝敵0体として即CLEARになるバグの原因だった（2026-07-12修正）。
+	for m in _mats:
+		m.albedo_color = Color(0.62, 0.10, 0.09)
+	# 死亡アニメ(Shot/停止)を待機へ戻す（前進を始めれば基底が自動でWalkへ切り替える）
+	if _ap != null and _ap.has_animation("Idle"):
+		_ap.play("Idle", 0.1)
+	can_sleep = true
 	_stand_at.call_deferred(pos)
 
 
