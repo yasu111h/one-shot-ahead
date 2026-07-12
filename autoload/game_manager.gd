@@ -74,6 +74,12 @@ const STAGES := [
 		"scene": "res://stages/mountain/mountain_stage.tscn",
 		"modes": [0],
 	},
+	{
+		"name": "TRAIN CROSSING",
+		"desc": "夕暮れの複線。並走する列車の窓が流れる一瞬を撃ち抜け",
+		"scene": "res://stages/train/train_stage.tscn",
+		"modes": [0],
+	},
 ]
 const SELECT_SCENE := "res://ui/stage_select.tscn"
 
