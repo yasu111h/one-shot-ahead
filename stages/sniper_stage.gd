@@ -428,7 +428,7 @@ func _do_fire() -> void:
 	rig.kick()
 	fx.muzzle_flash(start)
 	hud.on_shot()
-	sfx.play_shot()
+	sfx.play_shot(weapon.id)   # 装備武器のキャラクターで鳴る（敵の発砲は標準音のまま）
 	mode.on_fire()
 	# 悪人への命中確定弾は毎回バレットカムになる（民間人への誤射は演出せず実弾で見せる）
 	# ※ モードが replay_enabled=false の間、またはユーザーがHITリプレイをOFFにした間は抑制。

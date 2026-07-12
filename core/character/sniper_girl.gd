@@ -81,13 +81,14 @@ func _bake_from_fbx(path: String, tgt_skel: Skeleton3D) -> Animation:
 # ---------------------------------------------------------------- 銃（スナイパーライフル）
 
 ## ライフルを「みぞおちの支点」にぶら下げる。支点をピッチで回すと、銃口が
-## 狙っている方向（＝視線）へ一緒に向く（バレルは支点が水平なとき正面-Z）
+## 狙っている方向（＝視線）へ一緒に向く（バレルは支点が水平なとき正面-Z）。
+## モデルは装備中の武器（WeaponModel）＝ARMORYで買い替えると手元の銃も変わる
 func _build_gun() -> void:
 	_torso = Node3D.new()
 	_torso.name = "TorsoPivot"
 	_torso.position = TORSO_PIVOT
 	add_child(_torso)
-	var gun := _make_rifle()
+	var gun := WeaponModel.build(Settings.equipped_weapon)
 	gun.position = GUN_POS - TORSO_PIVOT
 	gun.rotation.y = PI   # モデルのバレルは+Z向きなので正面(-Z)へ回す
 	_torso.add_child(gun)
@@ -101,57 +102,6 @@ func set_aim_pitch(pitch: float) -> void:
 		_torso.rotation.x = pitch
 	if _bend != null:
 		_bend.pitch = pitch
-
-
-## スナイパーライフルの仮モデル（箱の組み合わせ・バレルはローカル+Z方向）
-## TABIJIのSMG風 _make_gun を長銃身＋スコープ付きに伸ばしたもの
-func _make_rifle() -> Node3D:
-	var root := Node3D.new()
-	root.name = "Rifle"
-	var metal := StandardMaterial3D.new()
-	metal.albedo_color = Color(0.11, 0.11, 0.13)
-	metal.metallic = 0.8
-	metal.roughness = 0.4
-	var accent := StandardMaterial3D.new()
-	accent.albedo_color = Color(0.18, 0.16, 0.14)
-	accent.metallic = 0.3
-	accent.roughness = 0.6
-
-	# 受け(本体)
-	root.add_child(_gun_box(Vector3(0.05, 0.075, 0.30), Vector3(0.0, 0.0, 0.05), metal))
-	# 長い銃身
-	root.add_child(_gun_box(Vector3(0.026, 0.026, 0.46), Vector3(0.0, 0.014, 0.42), metal))
-	# マズル(先端の太み)
-	root.add_child(_gun_box(Vector3(0.036, 0.036, 0.07), Vector3(0.0, 0.014, 0.66), accent))
-	# スコープ(本体上)
-	root.add_child(_gun_box(Vector3(0.032, 0.032, 0.16), Vector3(0.0, 0.075, 0.06), metal))
-	# ストック(後ろ)
-	root.add_child(_gun_box(Vector3(0.045, 0.065, 0.16), Vector3(0.0, -0.01, -0.17), accent))
-	# グリップ(下)
-	var grip := _gun_box(Vector3(0.04, 0.10, 0.05), Vector3(0.0, -0.08, -0.05), accent)
-	grip.rotation_degrees = Vector3(18.0, 0.0, 0.0)
-	root.add_child(grip)
-	# マガジン(下・前寄り)
-	var mag := _gun_box(Vector3(0.03, 0.10, 0.055), Vector3(0.0, -0.085, 0.09), metal)
-	mag.rotation_degrees = Vector3(-8.0, 0.0, 0.0)
-	root.add_child(mag)
-	# 二脚(前方下・左右)
-	for sx in [-1.0, 1.0]:
-		var leg := _gun_box(Vector3(0.012, 0.14, 0.012), Vector3(sx * 0.03, -0.08, 0.52), metal)
-		leg.rotation_degrees = Vector3(0.0, 0.0, sx * -14.0)
-		root.add_child(leg)
-	return root
-
-
-func _gun_box(size: Vector3, pos: Vector3, mat: StandardMaterial3D) -> MeshInstance3D:
-	var mi := MeshInstance3D.new()
-	var bm := BoxMesh.new()
-	bm.size = size
-	mi.mesh = bm
-	mi.position = pos
-	mi.material_override = mat
-	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	return mi
 
 
 # ---------------------------------------------------------------- 探索ユーティリティ
