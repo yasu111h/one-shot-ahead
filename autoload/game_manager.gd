@@ -56,6 +56,12 @@ const STAGES := [
 		"scene": "res://stages/desert/desert_stage.tscn",
 		"modes": [0, 2],
 	},
+	{
+		"name": "WIND FARM",
+		"desc": "夜明けの風車群。赤い攻撃ドローンの群れを撃ち落とせ（白は点検機）",
+		"scene": "res://stages/windfarm/windfarm_stage.tscn",
+		"modes": [0],
+	},
 ]
 const SELECT_SCENE := "res://ui/stage_select.tscn"
 
