@@ -169,9 +169,11 @@ func _fire_at_player(muzzle: Vector3) -> void:
 			stage.fx.impact_burst(result.position, result.get("normal", Vector3.UP)))
 	if stage.fx != null:
 		stage.fx.attach_tracer(bullet)
-	# 被弾判定は「弾がこちらへ届く瞬間」に遅らせる（弾速連動・time_scale連動タイマー）
+	# 被弾判定は「弾がこちらへ届く瞬間」に遅らせる（弾速連動・time_scale連動タイマー）。
+	# その瞬間に伏せて（遮蔽に沈んで）いれば当たらない＝弾が飛んでいる間に伏せれば避けられる
 	if will_hit and on_player_hit.is_valid():
 		var flight := muzzle.distance_to(aim) / speed
 		stage.get_tree().create_timer(flight).timeout.connect(func() -> void:
-			if is_instance_valid(stage) and not stage.game_over and on_player_hit.is_valid():
+			if is_instance_valid(stage) and not stage.game_over and on_player_hit.is_valid() \
+					and not stage.is_player_covered():
 				on_player_hit.call())
