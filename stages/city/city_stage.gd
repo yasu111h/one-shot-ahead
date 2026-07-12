@@ -16,8 +16,11 @@ var traffic: CityTraffic
 
 
 func _rig_position() -> Vector3:
-	# 屋上の前縁・右角（パラペットの内側すぐ）。スナイパーは屋上の端に陣取る
-	return Vector3(8.6, CityBuildings.ROOF_Y + 2.0, 35.4)
+	# 屋上の前縁・右角の内側。以前は角ギリギリ(8.6, 35.4)で、三人称の主人公が
+	# カメラの前方に立つため、視点を振ると体が前・右のパラペット（縁の壁）に
+	# めり込んだ。角から内側へ寄せて、どの向きでも体が壁に届かないようにする。
+	# 撃ち下ろしの見晴らしは高さ(y)で確保しているので、2m内側でも眺望は変わらない。
+	return Vector3(6.8, CityBuildings.ROOF_Y + 2.0, 37.2)
 
 
 func _configure_rig() -> void:
