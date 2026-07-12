@@ -30,7 +30,9 @@ var phase := 0.0                 # 周回位相（配置時にランダムを入
 
 var _prev_pos := Vector3.ZERO
 var _rotor_hubs: Array[Node3D] = []
+var _arms: Array[Node3D] = []          # 4本アーム（撃墜時に折れて破片になる）
 var _light_mat: StandardMaterial3D
+var _body_color := Color(0.16, 0.17, 0.2)  # 機体色（破片の色に流用）
 
 
 func _ready() -> void:
@@ -54,6 +56,7 @@ func _build_body() -> void:
 	add_child(col)
 
 	var body_col := Color(0.16, 0.17, 0.2) if hostile else Color(0.88, 0.9, 0.92)
+	_body_color = body_col
 	var body_mat := StandardMaterial3D.new()
 	body_mat.albedo_color = body_col
 	body_mat.roughness = 0.6
@@ -99,6 +102,7 @@ func _build_body() -> void:
 		arm.position = dir * 0.45
 		arm.rotation.y = -ang
 		add_child(arm)
+		_arms.append(arm)
 		# ローター円盤（見た目のみ）。hubを回してブレードの明滅感を出す
 		var hub := Node3D.new()
 		hub.position = dir * 0.72 + Vector3(0, 0.08, 0)
@@ -145,7 +149,9 @@ func _process(delta: float) -> void:
 			hub.rotate_y(38.0 * delta)
 
 
-## 命中：ライト消灯・ローター停止・物理落下（きりもみ）。血なし
+## 命中：機体が割れる。①4本アームが折れて破片になり飛散、②本体チャンク（コア）が
+## きりもみ落下、③着弾フラッシュ＋火花。破片・本体とも物理で落下する（血なし）。
+## ドローンは撃墜時リプレイのスロー中に死ぬので、割れて散る様子がよく見える。
 func die(hit_impulse: Vector3) -> void:
 	if not alive:
 		return
@@ -153,8 +159,110 @@ func die(hit_impulse: Vector3) -> void:
 	velocity_estimate = Vector3.ZERO
 	_light_mat.emission_enabled = false
 	_light_mat.albedo_color = Color(0.2, 0.2, 0.22)
+	var center := global_position
+	var parent := get_parent()
+	# 着弾フラッシュ＋火花（機体色の破片が飛ぶ手前で一瞬光る）
+	if parent != null:
+		_spawn_flash(parent, center)
+		_spawn_sparks(parent, center)
+	# ①アームを破片として切り離す（見た目のアームは隠し、独立した物理片を飛ばす）
+	if parent != null:
+		for a in _arms:
+			var wpos: Vector3 = a.global_position
+			var out := (wpos - center)
+			out.y = 0.0
+			out = (out.normalized() + Vector3(0, 0.7, 0)).normalized()
+			a.visible = false
+			_spawn_fragment(parent, wpos, out * randf_range(3.0, 5.5) + hit_impulse * 0.25)
+	for h in _rotor_hubs:
+		h.visible = false
+	# ②本体チャンク（コア＋ライト）はきりもみ落下
 	freeze = false
 	gravity_scale = 1.0
-	apply_central_impulse(hit_impulse)
-	apply_torque_impulse(Vector3(randf_range(-3, 3), randf_range(-3, 3), randf_range(-3, 3)))
+	apply_central_impulse(hit_impulse * 0.6 + Vector3(0, 1.5, 0))
+	apply_torque_impulse(Vector3(randf_range(-6, 6), randf_range(-6, 6), randf_range(-6, 6)))
 	died.emit(self)
+
+
+## アーム破片（小箱＋ローター円盤の1片）。独立したRigidBodyとして飛散・落下する
+func _spawn_fragment(parent: Node, wpos: Vector3, impulse: Vector3) -> void:
+	var frag := RigidBody3D.new()
+	frag.collision_layer = 0
+	frag.collision_mask = 0b0001  # 地形にだけ当たって落ちる（弾・他の破片とは干渉しない）
+	var mat := StandardMaterial3D.new()
+	mat.albedo_color = _body_color.darkened(0.15)
+	mat.roughness = 0.7
+	var mesh := MeshInstance3D.new()
+	var box := BoxMesh.new()
+	box.size = Vector3(0.5, 0.06, 0.09)
+	box.material = mat
+	mesh.mesh = box
+	mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	frag.add_child(mesh)
+	var col := CollisionShape3D.new()
+	var shape := BoxShape3D.new()
+	shape.size = Vector3(0.5, 0.1, 0.14)
+	col.shape = shape
+	frag.add_child(col)
+	parent.add_child(frag)
+	frag.global_position = wpos
+	frag.rotation = Vector3(randf() * TAU, randf() * TAU, randf() * TAU)
+	frag.apply_central_impulse(impulse)
+	frag.apply_torque_impulse(Vector3(
+		randf_range(-8, 8), randf_range(-8, 8), randf_range(-8, 8)))
+	# 後片付け（実時間で確実に消す＝スロー再生に引きずられない）
+	frag.get_tree().create_timer(6.0, true, false, true).timeout.connect(frag.queue_free)
+
+
+## 着弾フラッシュ（一瞬の発光球。すぐ縮んで消える）
+func _spawn_flash(parent: Node, wpos: Vector3) -> void:
+	var mat := StandardMaterial3D.new()
+	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	mat.albedo_color = Color(1.0, 0.85, 0.5)
+	mat.emission_enabled = true
+	mat.emission = Color(1.0, 0.8, 0.45)
+	mat.emission_energy_multiplier = 8.0
+	var mesh := MeshInstance3D.new()
+	var sphere := SphereMesh.new()
+	sphere.radius = 0.6
+	sphere.height = 1.2
+	sphere.material = mat
+	mesh.mesh = sphere
+	mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	parent.add_child(mesh)
+	mesh.global_position = wpos
+	# スロー再生でも実時間で縮めて消す（Tweenをタイムスケール無視で回す）
+	var tw := mesh.create_tween().set_ignore_time_scale(true)
+	tw.tween_property(mesh, "scale", Vector3(0.3, 0.3, 0.3), 0.14)
+	tw.tween_callback(mesh.queue_free)
+
+
+## 撃墜の火花（オレンジの粒が四方へ・one-shot）
+func _spawn_sparks(parent: Node, wpos: Vector3) -> void:
+	var p := CPUParticles3D.new()
+	parent.add_child(p)
+	p.global_position = wpos
+	p.emitting = true
+	p.one_shot = true
+	p.amount = 20
+	p.lifetime = 0.7
+	p.explosiveness = 1.0
+	p.direction = Vector3.ZERO
+	p.spread = 180.0
+	p.initial_velocity_min = 4.0
+	p.initial_velocity_max = 11.0
+	p.gravity = Vector3(0, -12, 0)
+	p.scale_amount_min = 0.06
+	p.scale_amount_max = 0.14
+	var mesh := SphereMesh.new()
+	mesh.radius = 0.05
+	mesh.height = 0.1
+	var mat := StandardMaterial3D.new()
+	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	mat.albedo_color = Color(1.0, 0.7, 0.3)
+	mat.emission_enabled = true
+	mat.emission = Color(1.0, 0.6, 0.25)
+	mat.emission_energy_multiplier = 4.0
+	mesh.material = mat
+	p.mesh = mesh
+	p.get_tree().create_timer(2.0, true, false, true).timeout.connect(p.queue_free)
