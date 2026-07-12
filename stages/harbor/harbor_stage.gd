@@ -196,12 +196,12 @@ func _glow_mat(color: Color, energy: float) -> StandardMaterial3D:
 
 ## 岸壁（明るいコンクリート）・岸壁の縁・海面
 func _build_ground(docks: StaticBody3D) -> void:
-	# 埠頭の床。§3「まず地面」。夜でも読める明るめのコンクリート
+	# 埠頭の床。§3「まず地面」。ワールド座標シェーダで目地・レール・車線・
+	# 作業灯の光だまりを描き、左右3kmどこまで見ても港の地表が続く
 	var quay := PlaneMesh.new()
-	quay.size = Vector2(360.0, 320.0)
-	var qm := StandardMaterial3D.new()
-	qm.albedo_color = Color(0.16, 0.17, 0.20)   # 濡れた夜のアスファルト。
-	qm.roughness = 0.45   # 光だまり・月光の照り返しでコントラストを作る
+	quay.size = Vector2(3000.0, 320.0)
+	var qm := ShaderMaterial.new()
+	qm.shader = preload("res://stages/harbor/harbor_quay.gdshader")
 	var qmi := MeshInstance3D.new()
 	qmi.mesh = quay
 	qmi.material_override = qm
@@ -209,32 +209,32 @@ func _build_ground(docks: StaticBody3D) -> void:
 	docks.add_child(qmi)
 	var shape := CollisionShape3D.new()
 	var bx := BoxShape3D.new()
-	bx.size = Vector3(360.0, 1.0, 320.0)
+	bx.size = Vector3(3000.0, 1.0, 320.0)
 	shape.shape = bx
 	shape.position = Vector3(0.0, -0.5, QUAY_EDGE_Z * 0.5 + 40.0)
 	docks.add_child(shape)
 
-	# 岸壁の縁（海へ落ちる壁）と縁石ライン
-	_box(docks, Vector3(360.0, 3.0, 1.6), Vector3(0.0, -1.5, QUAY_EDGE_Z), _concrete)
+	# 岸壁の縁（海へ落ちる壁）と縁石ライン（岸壁の延長に合わせて3km）
+	_box(docks, Vector3(3000.0, 3.0, 1.6), Vector3(0.0, -1.5, QUAY_EDGE_Z), _concrete)
 	var curb := _glow_mat(Color(0.85, 0.75, 0.35), 0.5)
-	_box(docks, Vector3(360.0, 0.12, 0.4), Vector3(0.0, 0.06, QUAY_EDGE_Z + 1.0), curb, false)
+	_box(docks, Vector3(3000.0, 0.12, 0.4), Vector3(0.0, 0.06, QUAY_EDGE_Z + 1.0), curb, false)
 
-	# 海面（専用の夜シェーダ。波・フレネル・月のきらめき）
+	# 海面（専用の夜シェーダ。波・フレネル・月のきらめき）。水平線まで7km
 	var sea := PlaneMesh.new()
-	sea.size = Vector2(1400.0, 900.0)
+	sea.size = Vector2(7000.0, 5600.0)
 	var sea_mat := ShaderMaterial.new()
 	sea_mat.shader = preload("res://stages/harbor/harbor_sea.gdshader")
 	var smi := MeshInstance3D.new()
 	smi.mesh = sea
 	smi.material_override = sea_mat
-	smi.position = Vector3(0.0, SEA_Y, QUAY_EDGE_Z - 440.0)
+	smi.position = Vector3(0.0, SEA_Y, QUAY_EDGE_Z - 2800.0)
 	docks.add_child(smi)
 	# 海にも弾を止める床を敷く（着弾の水柱は出さないが弾は消える高さ）
 	var sea_shape := CollisionShape3D.new()
 	var sbx := BoxShape3D.new()
-	sbx.size = Vector3(1400.0, 1.0, 900.0)
+	sbx.size = Vector3(7000.0, 1.0, 5600.0)
 	sea_shape.shape = sbx
-	sea_shape.position = Vector3(0.0, SEA_Y - 0.5, QUAY_EDGE_Z - 440.0)
+	sea_shape.position = Vector3(0.0, SEA_Y - 0.5, QUAY_EDGE_Z - 2800.0)
 	docks.add_child(sea_shape)
 
 
@@ -565,6 +565,46 @@ func _build_skyline(docks: StaticBody3D) -> void:
 			var wy: float = h * (0.25 + 0.25 * k)
 			_box(docks, Vector3(38.0, 1.4, 0.5),
 				Vector3(bx, wy, -784.5), win if (i + k) % 3 != 0 else win_b, false)
+
+	# 対岸第2列（1.5km先・低く暗いシルエット帯。第1列の隙間と外側を埋めて
+	# 「水平線まで対岸の街が続く」を作る）
+	var far_bm := StandardMaterial3D.new()
+	far_bm.albedo_color = Color(0.035, 0.045, 0.07)
+	far_bm.roughness = 0.95
+	var far_win := _glow_mat(Color(0.85, 0.75, 0.5), 0.7)
+	for i in 15:
+		var h2 := 26.0 + 44.0 * absf(sin(float(i) * 2.4))
+		var bx2 := -1400.0 + i * 200.0 + fmod(float(i) * 37.0, 60.0)
+		_box(docks, Vector3(90.0, h2, 40.0), Vector3(bx2, h2 * 0.5 - 2.0, -1500.0), far_bm)
+		_box(docks, Vector3(74.0, 1.2, 0.5),
+			Vector3(bx2, h2 * 0.55, -1479.0), far_win, false)
+	# 岸の灯の帯（2.4km先・水平線に沿う細い光の線＝遠い海岸の街明かり）
+	_box(docks, Vector3(6400.0, 0.7, 0.6),
+		Vector3(0.0, 0.6, -2400.0), _glow_mat(Color(0.9, 0.72, 0.45), 0.5), false)
+
+	# 左右の「港の続き」: コンテナ山とガントリークレーンのシルエット。
+	# 岸壁を3kmに延ばしたぶん、左右の遠方にも稼働中の港の気配を置く
+	var sil := StandardMaterial3D.new()
+	sil.albedo_color = Color(0.055, 0.06, 0.075)
+	sil.roughness = 0.9
+	var sil_lamp := _glow_mat(Color(1.0, 0.75, 0.4), 0.9)
+	for side in [-1.0, 1.0]:
+		for i in 6:
+			var sx: float = side * (330.0 + i * 150.0 + fmod(float(i) * 53.0, 70.0))
+			var sz := -95.0 - fmod(float(i) * 41.0, 70.0)
+			var sh := 7.5 + fmod(float(i) * 2.6, 8.0)
+			_box(docks, Vector3(38.0, sh, 14.0), Vector3(sx, sh * 0.5, sz), sil)
+			# 山の上にまばらな作業灯（遠くに点々と続く港の灯）
+			if i % 2 == 0:
+				_box(docks, Vector3(0.5, 0.5, 0.5),
+					Vector3(sx + 6.0, sh + 1.6, sz), sil_lamp, false)
+		# 遠方のガントリークレーンのシルエット（脚2本＋桁）
+		var cx: float = side * 760.0
+		_box(docks, Vector3(4.0, 52.0, 4.0), Vector3(cx - 22.0, 24.0, -196.0), sil)
+		_box(docks, Vector3(4.0, 52.0, 4.0), Vector3(cx + 22.0, 24.0, -196.0), sil)
+		_box(docks, Vector3(88.0, 4.0, 5.0), Vector3(cx, 50.0, -196.0), sil)
+		_box(docks, Vector3(0.6, 0.6, 0.6), Vector3(cx, 52.6, -196.0),
+			_glow_mat(Color(1.0, 0.25, 0.2), 1.2), false)  # 頂部の航空障害灯
 
 
 func _spawn_targets() -> void:
