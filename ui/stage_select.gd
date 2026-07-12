@@ -367,6 +367,18 @@ func _build_music_toggle() -> void:
 		Settings.music_enabled = not Settings.music_enabled
 		refresh.call())
 	refresh.call()
+	# ARMORY（武器ショップ）ボタン＝MUSICの下。所持金も添える
+	var shop_btn := Button.new()
+	shop_btn.text = "ARMORY  $%d" % Settings.money
+	shop_btn.custom_minimum_size = Vector2(118, 28)
+	shop_btn.add_theme_font_size_override("font_size", 11)
+	shop_btn.add_theme_stylebox_override("normal", _panel_style(1))
+	shop_btn.add_theme_stylebox_override("hover", _panel_style(1))
+	shop_btn.add_theme_stylebox_override("pressed", _panel_style(2, GOLD_BRIGHT))
+	add_child(shop_btn)
+	shop_btn.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT)
+	shop_btn.position += Vector2(-128, 78)
+	shop_btn.pressed.connect(func() -> void: GameManager.goto_shop())
 
 
 ## カードの土台（枠スタイル付きButton。中身は呼び出し側が重ねる）

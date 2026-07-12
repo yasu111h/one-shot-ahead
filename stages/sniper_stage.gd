@@ -27,8 +27,8 @@ const TERRAIN_MASK := 0b0001
 const GLASS_MASK := 0b10000  # 窓ガラス(レイヤ5)。割れるだけで弾は逸れない・止まらない
 # バレットカムのクールダウンは廃止（2026-07-10ユーザー決定：対象弾は毎回リプレイする）
 
-@export var muzzle_speed := 850.0  # 弾速 m/s（ほぼ実銃＝7.62mm NATO級。200mで約0.24s到達）
-@export var max_ammo := 100
+@export var muzzle_speed := 850.0  # 弾速 m/s（装備武器の値で_readyに上書きされる）
+@export var max_ammo := 30         # 総弾数（同上。マガジン込み・尽きたらAMMO OUT対象）
 
 # --- 照準減速(スティッキーエイム・CoD方式)。弾は曲げず、敵標的の近くでだけ感度を落とす ---
 @export var stick_angle := 2.5       # 減速ゾーンのしきい角(度)。照準レイと標的の最接近角がこの内側で減速
@@ -37,8 +37,17 @@ const GLASS_MASK := 0b10000  # 窓ガラス(レイヤ5)。割れるだけで弾�
 
 var wind_speed := 0.0
 var wind_accel := Vector3.ZERO
-var ammo := 0
+var ammo := 0               # 総残弾（マガジン込み）。モードのAMMO OUT判定はこれを見る
 var hits := 0
+
+# --- 武器（マガジン制・docs/武器・ショップ設計.md）---
+var weapon: Dictionary = {}  # 装備中の武器データ（WeaponDb。テストは_ready前に注入可）
+var mag := 0                # マガジン残弾。0になると自動リロード
+var mag_size := 6
+var reloading := false      # リロード中（撃てない・HUDがRELOADING表示に使う）
+var _reload_t := 0.0
+var _fire_cd := 0.0         # 発射間隔の残り(秒)
+var _fire_held := false     # FIRE押しっぱなし（フルオート武器の連射用）
 var targets: Array = []    # 弾道予測の対象（悪人＋民間人。民間人も「弾を止める者」として要る）
 var hostiles: Array = []   # 撃つべき標的（勝敗判定はこの数で行う）
 var bullets_in_flight := 0
@@ -71,6 +80,13 @@ var _stick_factor := 1.0  # 照準減速の現在値(物理フレームごとに
 func _ready() -> void:
 	GameManager.reset_time()
 	_is_touch = DisplayServer.is_touchscreen_available()
+	# 装備武器の数値を射撃コアへ反映（テストが weapon を注入済みならそれを使う）
+	if weapon.is_empty():
+		weapon = WeaponDb.equipped()
+	muzzle_speed = weapon.speed
+	max_ammo = weapon.total
+	mag_size = weapon.mag
+	mag = mag_size
 	ammo = max_ammo
 	_build_environment()
 	_build_world()
@@ -162,6 +178,7 @@ func _add_standing(pos: Vector3, hostile := true) -> TargetHuman:
 func _build_cameras() -> void:
 	rig = SniperCamera.new()
 	add_child(rig)
+	rig.recoil_kick *= weapon.recoil  # 武器の反動倍率（正確さは全武器同じ・扱いやすさだけの差）
 	rig.position = _rig_position()
 	_configure_rig()
 	# 主人公アバター：リグ（ヨー回転ノード）の子にして視点の左右に体ごと追従させる。
@@ -265,14 +282,18 @@ func _unhandled_input(event: InputEvent) -> void:
 		if Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT) and not is_replay_active():
 			rig.add_aim_delta(event.relative * _stick_factor)  # 照準減速を掛ける
 		return
-	if event is InputEventMouseButton and event.pressed:
-		match event.button_index:
-			MOUSE_BUTTON_LEFT:
-				request_fire()  # 左クリック＝発射
-			MOUSE_BUTTON_WHEEL_UP:
-				rig.step_zoom(1)
-			MOUSE_BUTTON_WHEEL_DOWN:
-				rig.step_zoom(-1)
+	if event is InputEventMouseButton:
+		if event.pressed:
+			match event.button_index:
+				MOUSE_BUTTON_LEFT:
+					set_fire_held(true)   # フルオート武器は押している間連射
+					request_fire()        # 左クリック＝発射
+				MOUSE_BUTTON_WHEEL_UP:
+					rig.step_zoom(1)
+				MOUSE_BUTTON_WHEEL_DOWN:
+					rig.step_zoom(-1)
+		elif event.button_index == MOUSE_BUTTON_LEFT:
+			set_fire_held(false)
 		return
 	if event is InputEventKey and not event.echo:
 		match event.keycode:
@@ -298,7 +319,22 @@ func _unhandled_input(event: InputEvent) -> void:
 func request_fire() -> void:
 	if game_over or is_replay_active() or ammo <= 0 or _pending_fire:
 		return
+	if reloading or mag <= 0 or _fire_cd > 0.0:
+		return  # リロード中・マガジン切れ・発射間隔内は撃てない
 	_pending_fire = true  # 物理フレームで発射（空間クエリの安全のため）
+
+
+## FIREボタン/左クリックの押しっぱなし状態（フルオート武器の連射用。HUDと入力が更新する）
+func set_fire_held(held: bool) -> void:
+	_fire_held = held
+
+
+## マガジンが空になったら自動でリロード（docs/武器・ショップ設計.md）
+func _start_reload() -> void:
+	if reloading or ammo <= 0:
+		return
+	reloading = true
+	_reload_t = weapon.reload
 
 
 func _physics_process(delta: float) -> void:
@@ -313,6 +349,15 @@ func _physics_process(delta: float) -> void:
 			w.dir = -1.0
 		elif f.progress <= 0.0:
 			w.dir = 1.0
+	# 武器の時間管理：発射間隔・リロード進行・フルオート連射
+	_fire_cd = maxf(_fire_cd - delta, 0.0)
+	if reloading:
+		_reload_t -= delta
+		if _reload_t <= 0.0:
+			reloading = false
+			mag = mini(mag_size, ammo)  # 残りの総弾数ぶんだけ込める
+	elif weapon.get("auto", false) and _fire_held:
+		request_fire()  # フルオート：押しっぱなしで発射間隔ごとに連射
 	# 発射処理
 	if _pending_fire:
 		_pending_fire = false
@@ -339,9 +384,13 @@ func _physics_process(delta: float) -> void:
 
 
 func _do_fire() -> void:
-	if game_over or is_replay_active() or ammo <= 0:
+	if game_over or is_replay_active() or ammo <= 0 or reloading or mag <= 0:
 		return
 	ammo -= 1
+	mag -= 1
+	_fire_cd = weapon.cooldown
+	if mag <= 0 and ammo > 0:
+		_start_reload()  # マガジンが空＝自動リロード
 	var cam := rig.camera
 	# 照準レイ（画面中央）そのまま。発射方向の「補正」は一切ない＝当てるのはプレイヤー自身
 	var dir := -cam.global_transform.basis.z
@@ -464,7 +513,8 @@ func _on_replay_impact(target: Node, point: Vector3, zone: String, dir: Vector3)
 	var dist := int(round(rig.camera.global_position.distance_to(point)))
 	target.die(dir * 3.0)
 	hits += 1
-	hud.show_stamp("%dm %s" % [dist, "HEADSHOT" if zone == "head" else "HIT"])
+	var reward := _award_kill(dist, zone)
+	hud.show_stamp("%dm %s  +$%d" % [dist, "HEADSHOT" if zone == "head" else "HIT", reward])
 	hud.show_hitmark(zone)
 	if zone == "head":
 		sfx.play_headshot()
@@ -502,7 +552,9 @@ func _apply_spread(dir: Vector3) -> Vector3:
 	var d: float = hud.range_distance
 	if d <= 0.0:
 		return dir  # 測距なし（空など）＝ずらす意味がない
-	var max_ang := (SPREAD_REF_DEV / SPREAD_REF_DIST) * (d / SPREAD_REF_DIST)
+	# 武器のばらつき倍率（高精度ライフルは小さく・LMGは大きい）
+	var max_ang := (SPREAD_REF_DEV / SPREAD_REF_DIST) * (d / SPREAD_REF_DIST) \
+		* float(weapon.get("spread", 1.0))
 	# 円盤内で一様にばらす（sqrtで中心偏重を打ち消す）＋方位はランダム
 	var ang := max_ang * sqrt(randf())
 	var azim := randf() * TAU
@@ -703,7 +755,8 @@ func _handle_target_hit(result: Dictionary, bullet: Bullet) -> void:
 		_check_end()
 		return
 	hits += 1
-	hud.show_stamp("%dm %s" % [dist, "HEADSHOT" if part == "head" else "HIT"])
+	var reward := _award_kill(dist, part)
+	hud.show_stamp("%dm %s  +$%d" % [dist, "HEADSHOT" if part == "head" else "HIT", reward])
 	hud.show_hitmark(part)
 	if part == "head":
 		sfx.play_headshot()
@@ -746,6 +799,21 @@ func _spawn_impact_dust(pos: Vector3) -> void:
 	get_tree().create_timer(1.5).timeout.connect(p.queue_free)
 
 
+# ---------------------------------------------------------------- 報酬（お金）
+
+const KILL_BASE_REWARD := 40      # キル1体の基礎報酬($)
+const KILL_DIST_RATE := 0.5       # 距離ボーナス($/m)
+const CLEAR_BONUS := 150          # クリアボーナス($)
+
+## 悪人を倒した報酬。距離が遠いほど・ヘッドショットなら高い。即時入金し金額を返す
+func _award_kill(dist: int, zone: String) -> int:
+	var reward := KILL_BASE_REWARD + int(float(dist) * KILL_DIST_RATE)
+	if zone == "head":
+		reward *= 2
+	Settings.add_money(reward)
+	return reward
+
+
 # ---------------------------------------------------------------- 勝敗
 
 func _fail(msg: String) -> void:
@@ -766,6 +834,8 @@ func _check_end() -> void:
 	var win := mode.check_win()
 	if win != "":
 		game_over = true
+		Settings.add_money(CLEAR_BONUS)
+		hud.show_stamp("CLEAR BONUS  +$%d" % CLEAR_BONUS)
 		hud.show_clear()
 
 

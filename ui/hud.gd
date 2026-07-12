@@ -17,7 +17,8 @@ var scope: ScopeOverlay
 var _reticle: DynamicReticle
 var _markers: TargetMarkers
 var _enemies_label: Label         # 左上：残り敵数「▼ N」だけ
-var _ammo_pips: AmmoPips          # 右下FIREの上：残弾を弾アイコンの列で表示
+var _ammo_pips: AmmoPips          # 右下FIREの上：マガジン残弾を弾アイコンの列で表示
+var _reload_label: Label          # リロード中の表示（stage.reloading連動）
 var _wind_label: Label
 var _range_label: Label           # 測距（レティクル脇に小さく）
 var _zoom_label: Label            # 倍率（SCOPEボタンの下に「1x」）
@@ -139,13 +140,19 @@ func _ready() -> void:
 	_update_chips()
 	# 操作ボタン（マルチタッチ対応のTouchScreenButton）。FIREは大きく（狙いながら押しやすく）
 	_fire_btn = _make_touch_button("FIRE", 76.0, Color(1.0, 0.4, 0.32, 0.92))
-	_fire_btn.pressed.connect(func() -> void: stage.request_fire())
+	_fire_btn.pressed.connect(func() -> void:
+		stage.set_fire_held(true)   # フルオート武器は押している間連射
+		stage.request_fire())
+	_fire_btn.released.connect(func() -> void: stage.set_fire_held(false))
 	_scope_btn = _make_touch_button("SCOPE", 46.0, Color(0.65, 0.85, 1.0, 0.9))
 	_scope_btn.pressed.connect(func() -> void: rig.cycle_zoom())
-	# 残弾ピップ（FIREの上）
+	# 残弾ピップ（FIREの上）＝マガジン残弾。リロード中はRELOADING表示
 	_ammo_pips = AmmoPips.new()
 	_ammo_pips.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(_ammo_pips)
+	_reload_label = _make_center_label("RELOADING...", 15, Control.PRESET_CENTER, Vector2(0, 72))
+	_reload_label.modulate = Color(1.0, 0.75, 0.4, 0.95)
+	_reload_label.visible = false
 	# デバッグUI（デバッグビルドのみ）：DEBUGボタンでGRAVITY/SPREAD/弾道の切替パネルを開く
 	if OS.is_debug_build:
 		_build_debug_ui()
@@ -346,7 +353,8 @@ func _process(delta: float) -> void:
 	# 倍率表示は連続値（ピンチズーム対応。「4.0x」→「4x」に整形）
 	_zoom_label.text = String.num(rig.magnification, 1).trim_suffix(".0") + "x"
 	# 残弾ピップ・残り敵数
-	_ammo_pips.set_ammo(stage.ammo)
+	_ammo_pips.set_ammo(stage.mag)   # マガジン残弾（総残弾でなく「今撃てる弾」）
+	_reload_label.visible = stage.reloading and not replay
 	var remaining: int = maxi(stage.hostiles.size() - stage.hits, 0)
 	_enemies_label.text = "▼ %d" % remaining
 	# 開始時のミッション文フェード（3秒表示→0.8秒でフェードアウト）
