@@ -38,6 +38,11 @@ func _exit_tree() -> void:
 	if _tween != null and _tween.is_valid():
 		_tween.kill()
 	_tween = null
+	# 再生中のストリーム参照を解放（強制終了時の "resource still in use" 回避）
+	for p in _players:
+		if is_instance_valid(p):
+			p.stop()
+			p.stream = null
 
 
 ## "Music"バスを（無ければ）作る。以後この名前でボリュームをまとめて操作する
@@ -69,7 +74,9 @@ func _play(path: String) -> void:
 	if path == _current_path and _players[_active].playing:
 		return  # 既に同じ曲が鳴っている（リトライ・同一画面の再入）
 	_current_path = path
-	var stream := load(path)
+	# CACHE_MODE_IGNORE: ResourceLoaderのキャッシュに残さない＝参照はこのプレイヤーだけ。
+	# 終了時に stream=null すれば確実に解放される（"resource still in use" を出さない）
+	var stream := ResourceLoader.load(path, "", ResourceLoader.CACHE_MODE_IGNORE)
 	if stream == null:
 		return
 	# MP3をループ再生に（Sunoの書き出しは末尾に余韻があるので loop_offset は付けない）
