@@ -14,6 +14,13 @@ const CIVILIAN_ROOMS := [0, 1]   # 民間人がいる部屋（最上階の見張
 var city: CityBuildings
 var traffic: CityTraffic
 
+# 時間帯（夜/夕方）。デバッグビルドではF4でいつでも切り替えて見比べられる
+var dusk := false
+var _we: WorldEnvironment
+var _sky_mat: ShaderMaterial
+var _moon: DirectionalLight3D
+var _sun: DirectionalLight3D
+
 
 func _rig_position() -> Vector3:
 	# 屋上の前縁・右角のすぐ内側（角から約30cm＝壁に寄りかかって狙撃する距離感）。
@@ -36,23 +43,20 @@ func _mission_text() -> String:
 	return "MISSION: ELIMINATE %d HOSTILES  /  DO NOT SHOOT CIVILIANS (WHITE)" % hostiles.size()
 
 
-## 夜の街: 雲の流れる濃紺の空。地平線は街明かりの照り返しで青白い
+## 街の空と光。夜（既定）と夕方の2プリセットを持ち、_apply_time_of_day で切り替える
 func _build_environment() -> void:
-	var sky_mat := ShaderMaterial.new()
-	sky_mat.shader = preload("res://shaders/sky_city.gdshader")
+	_sky_mat = ShaderMaterial.new()
+	_sky_mat.shader = preload("res://shaders/sky_city.gdshader")
 	var sky := Sky.new()
-	sky.sky_material = sky_mat
+	sky.sky_material = _sky_mat
 
 	var env := Environment.new()
 	env.background_mode = Environment.BG_SKY
 	env.sky = sky
 	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
-	env.ambient_light_color = Color(0.36, 0.44, 0.58)
-	env.ambient_light_energy = 0.5
 
 	# フォグは薄め（TABIJIより狙撃距離が長いので、濃いと200m先の部屋が見えない）
 	env.fog_enabled = true
-	env.fog_light_color = Color(0.045, 0.065, 0.10)
 	env.fog_density = 0.0009
 	env.fog_sun_scatter = 0.0
 	env.fog_aerial_perspective = 0.5
@@ -66,17 +70,65 @@ func _build_environment() -> void:
 
 	env.tonemap_mode = Environment.TONE_MAPPER_FILMIC
 
-	var we := WorldEnvironment.new()
-	we.environment = env
-	add_child(we)
+	_we = WorldEnvironment.new()
+	_we.environment = env
+	add_child(_we)
 
 	# 月明かり(青白い弱い光)。屋上の小物と建物の形を静かに起こす
-	var moon := DirectionalLight3D.new()
-	moon.light_color = Color(0.62, 0.72, 0.92)
-	moon.light_energy = 0.42
-	moon.shadow_enabled = false
-	moon.rotation_degrees = Vector3(-38.0, 140.0, 0.0)
-	add_child(moon)
+	_moon = DirectionalLight3D.new()
+	_moon.light_color = Color(0.62, 0.72, 0.92)
+	_moon.light_energy = 0.42
+	_moon.shadow_enabled = false
+	_moon.rotation_degrees = Vector3(-38.0, 140.0, 0.0)
+	add_child(_moon)
+
+	# 夕日(低い暖色の光)。夕方プリセットでだけ点く。
+	# プレイヤーの左後ろから＝標的ビルの正面が夕日に染まる向き
+	_sun = DirectionalLight3D.new()
+	_sun.light_color = Color(1.0, 0.62, 0.36)
+	_sun.light_energy = 1.0
+	_sun.shadow_enabled = false
+	_sun.rotation_degrees = Vector3(-12.0, 30.0, 0.0)
+	_sun.visible = false
+	add_child(_sun)
+
+	_apply_time_of_day(dusk)
+
+
+## 時間帯プリセットの適用。false=夜（従来どおり） / true=夕方
+func _apply_time_of_day(to_dusk: bool) -> void:
+	dusk = to_dusk
+	var env := _we.environment
+	if to_dusk:
+		# 夕方: 地平線が燃える暖色・雲の底が夕日に照る。空気も薄く暖色に
+		_sky_mat.set_shader_parameter("top_color", Color(0.055, 0.055, 0.13))
+		_sky_mat.set_shader_parameter("horizon_color", Color(0.78, 0.34, 0.11))
+		_sky_mat.set_shader_parameter("cloud_dark", Color(0.20, 0.11, 0.13))
+		_sky_mat.set_shader_parameter("cloud_lit", Color(0.85, 0.42, 0.20))
+		env.ambient_light_color = Color(0.55, 0.44, 0.42)
+		env.ambient_light_energy = 0.62
+		env.fog_light_color = Color(0.34, 0.18, 0.11)
+		_moon.visible = false
+		_sun.visible = true
+	else:
+		# 夜: 濃紺の空・街明かりの照り返し（従来の値そのまま）
+		_sky_mat.set_shader_parameter("top_color", Color(0.006, 0.010, 0.020))
+		_sky_mat.set_shader_parameter("horizon_color", Color(0.045, 0.065, 0.105))
+		_sky_mat.set_shader_parameter("cloud_dark", Color(0.030, 0.042, 0.065))
+		_sky_mat.set_shader_parameter("cloud_lit", Color(0.075, 0.085, 0.115))
+		env.ambient_light_color = Color(0.36, 0.44, 0.58)
+		env.ambient_light_energy = 0.5
+		env.fog_light_color = Color(0.045, 0.065, 0.10)
+		_moon.visible = true
+		_sun.visible = false
+
+
+## F4（デバッグビルド限定）: 夜⇔夕方の切り替え。射撃操作はSniperStage側に委譲
+func _unhandled_input(event: InputEvent) -> void:
+	super(event)
+	if event is InputEventKey and event.pressed and not event.echo \
+			and event.keycode == KEY_F4 and OS.is_debug_build:
+		_apply_time_of_day(not dusk)
 
 
 func _build_world() -> void:
