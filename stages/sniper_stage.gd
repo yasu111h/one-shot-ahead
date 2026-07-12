@@ -446,13 +446,11 @@ func _start_miss_replay(start: Vector3, dir: Vector3) -> void:
 	# 加速度と実飛行時間を渡す＝重力ONならリプレイ弾も実弾と同じ放物線を描く
 	bullet_cam.play(start, point, func() -> void:
 		if grounded:
-			# ビルの窓(シェーダ描き)ならガラス割れ演出。それ以外は土煙
+			# ビルの窓(シェーダ描き)ならガラス割れ演出。それ以外は地形着弾の演出
 			if WindowBreak.try_break(self, point, normal, dir):
 				sfx.play_glass()
 			else:
-				fx.impact_burst(point, normal)
-				_spawn_impact_dust(point)
-				sfx.play_impact()  # ガラス以外の着弾にも小さな音
+				_impact_effect(point, normal)
 		hud.show_miss_stamp()
 		mode.on_miss(),
 		Ballistics.effective_accel(wind_accel), impact.time)
@@ -671,13 +669,11 @@ func _on_bullet_hit(result: Dictionary, bullet: Bullet) -> void:
 		mode.on_miss()
 		_check_end()
 	else:
-		# ビルの窓(シェーダ描き)ならガラス割れ演出。それ以外は地形着弾のフレア＋土煙
+		# ビルの窓(シェーダ描き)ならガラス割れ演出。それ以外は地形着弾の演出
 		if WindowBreak.try_break(self, result.position, normal, bullet.velocity.normalized()):
 			sfx.play_glass()
 		else:
-			fx.impact_burst(result.position, normal)
-			_spawn_impact_dust(result.position)
-			sfx.play_impact()  # ガラス以外の着弾にも小さな音
+			_impact_effect(result.position, normal)
 		mode.on_miss()
 		_check_end()
 
@@ -715,6 +711,14 @@ func _handle_target_hit(result: Dictionary, bullet: Bullet) -> void:
 		sfx.play_hit()
 	mode.on_hit(target, part)
 	_check_end()
+
+
+## 地形着弾の演出（フレア＋土煙＋小さな音）。
+## 水面など特殊な着弾を持つステージはこれを上書きする（例: 山岳の川＝水しぶき）
+func _impact_effect(point: Vector3, normal: Vector3) -> void:
+	fx.impact_burst(point, normal)
+	_spawn_impact_dust(point)
+	sfx.play_impact()
 
 
 func _spawn_impact_dust(pos: Vector3) -> void:
