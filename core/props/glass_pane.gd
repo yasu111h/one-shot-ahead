@@ -74,6 +74,26 @@ func shatter(hit_pos: Vector3, dir: Vector3) -> void:
 	set_process(true)
 
 
+## 割れたガラスを無傷に戻す（列車ステージのループで「別の車両＝新品の窓」にする）。
+## 破片・閃光・破れ残りはすべてこのノードの子なので一括で片付け、板と当たり判定を復活。
+func reset() -> void:
+	if not broken:
+		return
+	broken = false
+	set_process(false)
+	_flash = null
+	_live_fx.clear()
+	for c in get_children():
+		if c != _pane and c != _col:
+			c.queue_free()   # 破片パーティクル・閃光ライト・破れ残り
+	if _pane != null:
+		_pane.visible = true
+	collision_layer = LAYER
+	if _col != null:
+		_col.set_deferred("disabled", false)
+	set_deferred("monitorable", true)
+
+
 ## 割れた後の毎フレーム処理：スロー補償と閃光の実時間減衰
 func _process(delta: float) -> void:
 	var ts := maxf(Engine.time_scale, 0.0001)
