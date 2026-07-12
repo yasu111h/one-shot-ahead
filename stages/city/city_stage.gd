@@ -14,7 +14,7 @@ const CIVILIAN_ROOMS := [0, 1]   # 民間人がいる部屋（最上階の見張
 var city: CityBuildings
 var traffic: CityTraffic
 
-# 時間帯（夜/夕方）。デバッグビルドではF4でいつでも切り替えて見比べられる
+# 時間帯（夜/夕方）。デバッグビルドのDEBUGパネル「TIME」ボタンで切り替えて見比べられる
 var dusk := false
 var _we: WorldEnvironment
 var _sky_mat: ShaderMaterial
@@ -123,12 +123,14 @@ func _apply_time_of_day(to_dusk: bool) -> void:
 		_sun.visible = false
 
 
-## F4（デバッグビルド限定）: 夜⇔夕方の切り替え。射撃操作はSniperStage側に委譲
-func _unhandled_input(event: InputEvent) -> void:
-	super(event)
-	if event is InputEventKey and event.pressed and not event.echo \
-			and event.keycode == KEY_F4 and OS.is_debug_build:
-		_apply_time_of_day(not dusk)
+## DEBUGパネルの「TIME」ボタンから呼ばれる：夜⇔夕方の切り替え
+func toggle_time_of_day() -> void:
+	_apply_time_of_day(not dusk)
+
+
+## HUDが「TIME: NIGHT/DUSK」表示に使う
+func is_dusk() -> bool:
+	return dusk
 
 
 func _build_world() -> void:
