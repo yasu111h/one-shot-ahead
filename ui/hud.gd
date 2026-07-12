@@ -158,8 +158,8 @@ func _ready() -> void:
 	_reload_label = _make_center_label("RELOADING...", 15, Control.PRESET_CENTER, Vector2(0, 72))
 	_reload_label.modulate = Color(1.0, 0.75, 0.4, 0.95)
 	_reload_label.visible = false
-	# デバッグUI（デバッグビルドのみ）：DEBUGボタンでGRAVITY/SPREAD/弾道の切替パネルを開く
-	if OS.is_debug_build:
+	# デバッグUI（Settings.DEBUG_MODEがtrueのときだけ）：DEBUGボタンでGRAVITY/SPREAD/弾道の切替パネルを開く
+	if Settings.DEBUG_MODE:
 		_build_debug_ui()
 	_layout_buttons()
 	get_viewport().size_changed.connect(_layout_buttons)
