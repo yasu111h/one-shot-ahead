@@ -23,10 +23,15 @@ var _wind_label: Label
 var _range_label: Label           # 測距（レティクル脇に小さく）
 var _zoom_label: Label            # 倍率（SCOPEボタンの下に「1x」）
 var _stamp: Label
-var _center_msg: Label
 var _intro_label: Label           # 開始時だけ中央に出すミッション文（数秒でフェード）
+var _result_root: CenterContainer # リザルトカードを画面中央に置く容れ物
+var _result_card: PanelContainer  # CLEAR/失敗のカード（タイトル＋ボタン）
+var _result_title: Label
 var _retry_btn: Button
 var _select_btn: Button
+var _hide_btn: Button             # CLEAR時のみ：カードを隠して射撃を続ける
+var _show_result_chip: Button     # カードを隠している間に出す再表示チップ
+var _result_is_clear := false     # 直近のリザルトがCLEAR（勝ち）か
 var _menu_btn: Button             # 右上：メニュー「≡」
 var _hit_chip: Button             # 右上：命中リプレイ ON/OFF チップ
 var _miss_chip: Button            # 右上：ミスリプレイ ON/OFF チップ
@@ -96,28 +101,8 @@ func _ready() -> void:
 	_stamp = _make_center_label("", 44, Control.PRESET_CENTER, Vector2(0, 95))
 	_stamp.modulate = STAMP_HIT_COLOR
 	_stamp.visible = false
-	_center_msg = _make_center_label("", 52, Control.PRESET_CENTER, Vector2(0, -70))
-	_center_msg.visible = false
-	# RETRYボタン
-	_retry_btn = Button.new()
-	_retry_btn.text = "RETRY"
-	_retry_btn.custom_minimum_size = Vector2(180, 52)
-	_retry_btn.add_theme_font_size_override("font_size", 22)
-	add_child(_retry_btn)
-	_retry_btn.set_anchors_and_offsets_preset(Control.PRESET_CENTER)
-	_retry_btn.position += Vector2(0, 10)
-	_retry_btn.visible = false
-	_retry_btn.pressed.connect(func() -> void: stage.retry())
-	# リザルト用「STAGE SELECT」ボタン（RETRYの下）
-	_select_btn = Button.new()
-	_select_btn.text = "STAGE SELECT"
-	_select_btn.custom_minimum_size = Vector2(180, 44)
-	_select_btn.add_theme_font_size_override("font_size", 16)
-	add_child(_select_btn)
-	_select_btn.set_anchors_and_offsets_preset(Control.PRESET_CENTER)
-	_select_btn.position += Vector2(0, 74)
-	_select_btn.visible = false
-	_select_btn.pressed.connect(func() -> void: GameManager.goto_select())
+	# リザルト（CLEAR/失敗）の中央カード。整った縦積み＝タイトル→RETRY→STAGE SELECT
+	_build_result_ui()
 	# 右上：メニュー「≡」（コンパクト・半透明）
 	_menu_btn = _make_chip("≡", Vector2(44, 34))
 	_menu_btn.add_theme_font_size_override("font_size", 22)
@@ -338,6 +323,10 @@ func _process(delta: float) -> void:
 	_menu_btn.visible = not replay
 	_hit_chip.visible = not replay
 	_miss_chip.visible = not replay
+	# 自由射撃の再表示チップはリプレイ中だけ隠す（カードが隠れている間のみ出す）
+	if _show_result_chip.visible or replay:
+		_show_result_chip.visible = _result_root != null and not _result_root.visible \
+			and stage.game_over and not replay
 	if _debug_btn != null:
 		_debug_btn.visible = not replay
 		if replay:
@@ -440,21 +429,102 @@ func _update_debug_toggles() -> void:
 	_traj_toggle.text = "TRAJECTORY: %s" % ("ON" if traj_on else "OFF")
 
 
+## リザルトの中央カード（タイトル＋RETRY＋STAGE SELECT＋クリア時の「隠す」）。
+## 縦に等間隔で積んだ角丸カード＝ボタンの並びがいびつにならない
+func _build_result_ui() -> void:
+	_result_root = CenterContainer.new()
+	_result_root.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(_result_root)
+	_result_root.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_result_root.visible = false
+
+	_result_card = PanelContainer.new()
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = Color(0.05, 0.06, 0.08, 0.82)
+	sb.set_corner_radius_all(14)
+	sb.set_content_margin_all(22)
+	sb.border_width_top = 2
+	sb.border_width_bottom = 2
+	sb.border_width_left = 2
+	sb.border_width_right = 2
+	sb.border_color = Color(1, 1, 1, 0.10)
+	_result_card.add_theme_stylebox_override("panel", sb)
+	_result_root.add_child(_result_card)
+
+	var vb := VBoxContainer.new()
+	vb.add_theme_constant_override("separation", 14)
+	vb.alignment = BoxContainer.ALIGNMENT_CENTER
+	_result_card.add_child(vb)
+
+	_result_title = Label.new()
+	_result_title.add_theme_font_size_override("font_size", 44)
+	_result_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_add_outline(_result_title, 5)
+	vb.add_child(_result_title)
+
+	_retry_btn = _make_result_button("RETRY", 22)
+	_retry_btn.pressed.connect(func() -> void: stage.retry())
+	vb.add_child(_retry_btn)
+
+	_select_btn = _make_result_button("STAGE SELECT", 18)
+	_select_btn.pressed.connect(func() -> void: GameManager.goto_select())
+	vb.add_child(_select_btn)
+
+	# クリア時のみ：カードを隠して射撃を続ける（隠しアイテム探し用）
+	_hide_btn = _make_result_button("▽ 隠して射撃を続ける", 15)
+	_hide_btn.pressed.connect(_hide_result)
+	vb.add_child(_hide_btn)
+
+	# 隠している間に出す再表示チップ（画面上中央）
+	_show_result_chip = _make_chip("≡ 結果", Vector2(96, 34))
+	_show_result_chip.set_anchors_and_offsets_preset(Control.PRESET_CENTER_TOP)
+	_show_result_chip.position += Vector2(-48, 14)
+	_show_result_chip.pressed.connect(_show_result_again)
+	_show_result_chip.visible = false
+
+
+## リザルトカード内の統一ボタン（横幅そろえ・角丸）
+func _make_result_button(text: String, font_size: int) -> Button:
+	var b := Button.new()
+	b.text = text
+	b.custom_minimum_size = Vector2(240, 48)
+	b.add_theme_font_size_override("font_size", font_size)
+	return b
+
+
 func show_clear() -> void:
-	_center_msg.text = "CLEAR"
-	_center_msg.modulate = Color(0.95, 0.85, 0.5)
-	_center_msg.visible = true
-	_retry_btn.visible = true
-	_select_btn.visible = true
+	_result_is_clear = true
+	_result_title.text = "CLEAR"
+	_result_title.add_theme_color_override("font_color", Color(0.98, 0.88, 0.5))
+	_hide_btn.visible = true
+	_result_root.visible = true
+	_show_result_chip.visible = false
 
 
 ## ミッション失敗（弾切れ・民間人の誤射など）
 func show_fail(msg: String) -> void:
-	_center_msg.text = msg
-	_center_msg.modulate = Color(0.95, 0.45, 0.4)
-	_center_msg.visible = true
-	_retry_btn.visible = true
-	_select_btn.visible = true
+	_result_is_clear = false
+	_result_title.text = msg
+	_result_title.add_theme_color_override("font_color", Color(0.98, 0.5, 0.42))
+	_hide_btn.visible = false   # 失敗時は「続ける」を出さない
+	_result_root.visible = true
+	_show_result_chip.visible = false
+
+
+## カードを隠してステージ上の自由射撃へ（クリア後の隠しアイテム探し）
+func _hide_result() -> void:
+	_result_root.visible = false
+	_show_result_chip.visible = true
+	if stage != null:
+		stage.set_free_roam(true)
+
+
+## 隠したカードを再表示（自由射撃を終了してリザルトへ戻る）
+func _show_result_again() -> void:
+	_result_root.visible = true
+	_show_result_chip.visible = false
+	if stage != null:
+		stage.set_free_roam(false)
 
 
 ## 残弾ピップ：弾アイコンの横一列で残弾を表す（数字の「AMMO 100/100」を廃止）。

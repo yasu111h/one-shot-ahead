@@ -52,6 +52,9 @@ var targets: Array = []    # 弾道予測の対象（悪人＋民間人。民間
 var hostiles: Array = []   # 撃つべき標的（勝敗判定はこの数で行う）
 var bullets_in_flight := 0
 var game_over := false
+## クリア後の自由射撃モード（リザルトカードを隠して隠しアイテム等を撃つ）。
+## game_over のまま撃てる＝勝敗は再判定しない。弾数は無制限
+var free_roam := false
 
 var mode: GameMode          # ゲームモード（A精密/B応戦/C物量…）。未指定なら選択中or精密が入る
 # モードが制御するリプレイ方針（C物量は要所以外を抑制する。既定は従来どおり毎回リプレイ）
@@ -316,11 +319,20 @@ func _unhandled_input(event: InputEvent) -> void:
 
 # ---------------------------------------------------------------- 射撃
 
+## HUDが呼ぶ：クリア後の自由射撃を切り替える（カードを隠す＝ON）
+func set_free_roam(on: bool) -> void:
+	free_roam = on
+
+
 func request_fire() -> void:
-	if game_over or is_replay_active() or ammo <= 0 or _pending_fire:
+	if is_replay_active() or _pending_fire or _fire_cd > 0.0:
 		return
-	if reloading or mag <= 0 or _fire_cd > 0.0:
-		return  # リロード中・マガジン切れ・発射間隔内は撃てない
+	# 自由射撃中（クリア後）は勝敗・弾数・リロードを無視して撃てる（発射間隔だけ守る）
+	if free_roam:
+		_pending_fire = true
+		return
+	if game_over or ammo <= 0 or reloading or mag <= 0:
+		return  # 通常：勝敗・弾切れ・リロード中・マガジン切れは撃てない
 	_pending_fire = true  # 物理フレームで発射（空間クエリの安全のため）
 
 
@@ -384,13 +396,20 @@ func _physics_process(delta: float) -> void:
 
 
 func _do_fire() -> void:
-	if game_over or is_replay_active() or ammo <= 0 or reloading or mag <= 0:
+	if is_replay_active():
 		return
-	ammo -= 1
-	mag -= 1
-	_fire_cd = weapon.cooldown
-	if mag <= 0 and ammo > 0:
-		_start_reload()  # マガジンが空＝自動リロード
+	if free_roam:
+		# クリア後の自由射撃：勝敗・弾数・マガジン・リロードを無視して撃てる
+		# （隠しアイテム探し用。弾も消費しない）
+		_fire_cd = weapon.cooldown
+	elif game_over or ammo <= 0 or reloading or mag <= 0:
+		return
+	else:
+		ammo -= 1
+		mag -= 1
+		_fire_cd = weapon.cooldown
+		if mag <= 0 and ammo > 0:
+			_start_reload()  # マガジンが空＝自動リロード
 	var cam := rig.camera
 	# 照準レイ（画面中央）そのまま。発射方向の「補正」は一切ない＝当てるのはプレイヤー自身
 	var dir := -cam.global_transform.basis.z
@@ -840,6 +859,7 @@ func _check_end() -> void:
 
 
 func retry() -> void:
+	free_roam = false
 	bullet_cam.abort()
 	GameManager.reset_time()
 	get_tree().reload_current_scene()
