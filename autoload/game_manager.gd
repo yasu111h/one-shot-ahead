@@ -56,6 +56,12 @@ const STAGES := [
 		"scene": "res://stages/desert/desert_stage.tscn",
 		"modes": [0, 2],
 	},
+	{
+		"name": "CONSTRUCTION SITE",
+		"desc": "高層ビル建設現場。鉄骨の格子越しに、階を移る敵狙撃手を撃て",
+		"scene": "res://stages/construction/construction_stage.tscn",
+		"modes": [0, 1],
+	},
 ]
 const SELECT_SCENE := "res://ui/stage_select.tscn"
 
