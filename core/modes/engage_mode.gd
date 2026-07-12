@@ -29,6 +29,9 @@ var _damage_flash: DamageFlash
 
 func setup(stage_ref: SniperStage) -> void:
 	super.setup(stage_ref)
+	# 伏せ（カバー）を有効化：伏せ中は敵弾が当たらない代わりに撃てない。
+	# 「撃つ→狙われる→伏せて凌ぐ→起きて撃ち返す」が応戦モードの基本リズムになる
+	stage.crouch_enabled = true
 	# 被弾フィードバック（赤ビネット＋全画面フラッシュ）を画面へ
 	_damage_flash = DamageFlash.new()
 	stage.add_child(_damage_flash)

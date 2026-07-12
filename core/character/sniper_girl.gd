@@ -30,6 +30,9 @@ const TORSO_PIVOT := Vector3(0.05, 1.12, -0.05)
 var _skel: Skeleton3D
 var _torso: Node3D          # 銃をぶら下げる支点（ピッチで回す）
 var _bend: TorsoBend        # 上半身の骨を曲げるモディファイア
+var _crouch: CrouchPose     # 伏せ（しゃがみ）ポーズのモディファイア
+var _crouch_blend := 0.0
+var _base_y := INF          # 立ち姿勢のローカル基準y（伏せの沈み用・初回set_crouchで取得）
 
 
 func _ready() -> void:
@@ -59,6 +62,10 @@ func _ready() -> void:
 	_bend = TorsoBend.new()
 	_bend.body_ref = self
 	_skel.add_child(_bend)
+	# 伏せポーズのモディファイア（さらに後段＝構えの上から脚を折る）
+	_crouch = CrouchPose.new()
+	_crouch.body_ref = self
+	_skel.add_child(_crouch)
 
 
 ## FBXを一時的に実体化し、そのMixamoアニメをVRM骨格用にベイクして返す（TABIJI方式）
@@ -96,11 +103,34 @@ func _build_gun() -> void:
 ## 上下の狙い(rad・上が正)を受け取り、銃と上半身をそこへ向ける。
 ## ステージが毎フレーム rig.get_aim_pitch() を渡す
 func set_aim_pitch(pitch: float) -> void:
-	# girlローカルの前方は-Z。+XまわりにpitchだけまわすとFORWARDが上を向く
+	# girlローカルの前方は-Z。+XまわりにpitchだけまわすとFORWARDが上を向く。
+	# 伏せ中は銃口を下げて構えを解く（伏せ＝撃てない、が見た目でも分かる）
 	if _torso != null:
-		_torso.rotation.x = pitch
+		_torso.rotation.x = pitch - 0.55 * _crouch_blend
 	if _bend != null:
 		_bend.pitch = pitch
+
+
+## 伏せ具合(0=立ち 1=伏せ)。ステージが毎フレーム渡す。
+## 脚を折るポーズ＋体全体の沈み（銃口の下げは set_aim_pitch が合成する）。
+## girlはリグ(カメラ)の子＝カメラの沈み(CAM_DROP)ごと一緒に下がってしまうので、
+## それを打ち消した上で「体はワールドで POSE_SINK だけ沈む」ようにする
+## （据え置きだと相対的に体がせり上がり、脚がカメラの前にドアップになる）
+const CAM_DROP := 0.85    # ステージ側 CROUCH_CAM_DROP と同じ値
+const POSE_SINK := 0.52   # しゃがみで体が実際に沈む量(m)
+
+
+func set_crouch(blend: float) -> void:
+	if is_equal_approx(blend, _crouch_blend):
+		return
+	# 基準yは初回に取る（_ready時点ではステージがまだ girl.position を設定していない）
+	if _base_y == INF:
+		_base_y = position.y
+	_crouch_blend = blend
+	if _crouch != null:
+		_crouch.blend = blend
+	# リグの沈みを打ち消し、ワールドでは POSE_SINK だけ沈む
+	position.y = _base_y + (CAM_DROP - POSE_SINK) * blend
 
 
 ## スナイパーライフルの仮モデル（箱の組み合わせ・バレルはローカル+Z方向）

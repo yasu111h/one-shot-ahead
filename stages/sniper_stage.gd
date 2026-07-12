@@ -56,6 +56,16 @@ var game_over := false
 ## game_over のまま撃てる＝勝敗は再判定しない。弾数は無制限
 var free_roam := false
 
+## 伏せ（カバー）。B応戦モードで使う防御行動（EngageMode.setup が有効化する）。
+## 押している間だけ伏せ、カメラと体が沈む。伏せ中は敵弾が当たらない代わりに
+## 自分も撃てない＝「伏せて凌ぐ→起きて撃ち返す」のリズムを作る
+var crouch_enabled := false     # モードが true にすると COVERボタン/Cキーが効く
+var crouching := false          # いま伏せ入力中か
+var crouch_blend := 0.0         # 0=立ち 1=伏せ（なめらかに遷移）
+const CROUCH_CAM_DROP := 0.85   # 伏せでカメラが沈む量(m)
+const CROUCH_SPEED := 5.0       # 遷移速度(1/s)
+var _rig_base_y := 0.0          # リグの基準高さ（伏せの沈み計算用）
+
 var mode: GameMode          # ゲームモード（A精密/B応戦/C物量…）。未指定なら選択中or精密が入る
 # モードが制御するリプレイ方針（C物量は要所以外を抑制する。既定は従来どおり毎回リプレイ）
 var replay_enabled := true        # falseの間は命中確定弾もリプレイせず実弾で見せる
@@ -183,6 +193,7 @@ func _build_cameras() -> void:
 	add_child(rig)
 	rig.recoil_kick *= weapon.recoil  # 武器の反動倍率（正確さは全武器同じ・扱いやすさだけの差）
 	rig.position = _rig_position()
+	_rig_base_y = rig.position.y
 	_configure_rig()
 	# 主人公アバター：リグ（ヨー回転ノード）の子にして視点の左右に体ごと追従させる。
 	# カメラの少し前・左下に立つ＝肩越しの三人称。スコープ中は非表示（一人称へ）
@@ -303,6 +314,8 @@ func _unhandled_input(event: InputEvent) -> void:
 			KEY_Q:
 				if event.pressed:
 					rig.cycle_zoom()  # Q＝スコープトグル（1x→4x→8x→1x）
+			KEY_C:
+				set_crouch(event.pressed)  # C長押し＝伏せ（B応戦のみ有効）
 			KEY_F:
 				if event.pressed:
 					request_fire()  # 予備の発射キー
@@ -324,9 +337,28 @@ func set_free_roam(on: bool) -> void:
 	free_roam = on
 
 
+## HUD(COVERボタン)/Cキーが呼ぶ：伏せの開始・解除（押している間だけ伏せる）
+func set_crouch(on: bool) -> void:
+	if not crouch_enabled:
+		return
+	if on == crouching:
+		return
+	crouching = on
+	if on and rig != null and rig.zoom_stage > 0:
+		rig.set_zoom_stage(0)   # 伏せたらスコープは覗けない（自然に肉眼へ）
+
+
+## 敵の弾の着弾判定が使う：「いま遮蔽に隠れているか」。
+## 遷移の途中でも半分以上沈んでいれば避けられる（伏せの反応が報われる）
+func is_player_covered() -> bool:
+	return crouch_blend > 0.5
+
+
 func request_fire() -> void:
 	if is_replay_active() or _pending_fire or _fire_cd > 0.0:
 		return
+	if crouch_blend > 0.2:
+		return  # 伏せている（沈んでいる）間は撃てない＝無敵のまま撃つことはできない
 	# 自由射撃中（クリア後）は勝敗・弾数・リロードを無視して撃てる（発射間隔だけ守る）
 	if free_roam:
 		_pending_fire = true
@@ -374,12 +406,17 @@ func _physics_process(delta: float) -> void:
 	if _pending_fire:
 		_pending_fire = false
 		_do_fire()
+	# 伏せの遷移：カメラと主人公が沈む（立ち⇄伏せをなめらかに）
+	crouch_blend = move_toward(crouch_blend, 1.0 if crouching else 0.0, CROUCH_SPEED * delta)
+	if rig != null:
+		rig.position.y = _rig_base_y - CROUCH_CAM_DROP * crouch_blend
 	# 主人公アバターはスコープを覗き込むまで見える（覗いたら一人称＝非表示）。
 	# バレットカム上映中は「角で構える姿」が画に入るので表示したままにする
 	if girl != null:
 		girl.visible = rig.aim_blend < 0.5 or is_replay_active()
 		# 上下の狙いに合わせて上半身と銃口を向ける（左右はリグの回転で追従済み）
 		girl.set_aim_pitch(rig.get_aim_pitch())
+		girl.set_crouch(crouch_blend)
 	# 照準減速(スティッキーエイム)の更新。空間クエリを使うので物理フレームで計算し、
 	# 入力イベント側はこのキャッシュ値を使う。減速ゾーン内はレティクル中心点が控えめに色づく
 	# （旧オートエイムの「オレンジ＝撃てば当たる」保証ではない。当てるのはプレイヤー自身）

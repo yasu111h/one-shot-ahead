@@ -39,6 +39,8 @@ var _mode_lines: Label            # モード固有のHUD行（hud_extra().lines
 var _mode_gauges: ModeGauges      # モード固有のゲージ（hud_extra().gauges の受け皿）
 var _fire_btn: TouchScreenButton
 var _scope_btn: TouchScreenButton
+var _cover_btn: TouchScreenButton   # B応戦のみ：押している間伏せる（敵弾を避ける）
+var _cover_label: Label             # 伏せ中の「IN COVER」表示
 # --- デバッグUI（OS.is_debug_build のときだけ生成。DEBUGボタンでパネル開閉） ---
 var _debug_btn: Button
 var _debug_panel: PanelContainer
@@ -131,6 +133,15 @@ func _ready() -> void:
 	_fire_btn.released.connect(func() -> void: stage.set_fire_held(false))
 	_scope_btn = _make_touch_button("SCOPE", 46.0, Color(0.65, 0.85, 1.0, 0.9))
 	_scope_btn.pressed.connect(func() -> void: rig.cycle_zoom())
+	# COVER（B応戦のみ表示）：押している間だけ伏せる。敵弾を避ける代わりに撃てない
+	_cover_btn = _make_touch_button("COVER", 46.0, Color(0.75, 1.0, 0.7, 0.9))
+	_cover_btn.pressed.connect(func() -> void: stage.set_crouch(true))
+	_cover_btn.released.connect(func() -> void: stage.set_crouch(false))
+	_cover_btn.visible = false   # crouch_enabled のステージだけ _process で出す
+	_cover_label = _make_center_label("IN COVER", 17, Control.PRESET_CENTER, Vector2(0, 110))
+	_cover_label.modulate = Color(0.75, 1.0, 0.7, 0.95)
+	_add_outline(_cover_label, 4)
+	_cover_label.visible = false
 	# 残弾ピップ（FIREの上）＝マガジン残弾。リロード中はRELOADING表示
 	_ammo_pips = AmmoPips.new()
 	_ammo_pips.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -290,6 +301,7 @@ func _layout_buttons() -> void:
 	_place_button(_fire_btn, fire_c)
 	var scope_c := Vector2(78.0, vs.y - 84.0)
 	_place_button(_scope_btn, scope_c)
+	_place_button(_cover_btn, scope_c + Vector2(26.0, -104.0))
 	# 倍率ラベルはSCOPEボタンの真下
 	if _zoom_label != null:
 		_zoom_label.set_anchors_and_offsets_preset(Control.PRESET_TOP_LEFT)
@@ -323,6 +335,9 @@ func _process(delta: float) -> void:
 	_menu_btn.visible = not replay
 	_hit_chip.visible = not replay
 	_miss_chip.visible = not replay
+	# 伏せ（B応戦のみ）。ボタン表示と「IN COVER」
+	_cover_btn.visible = stage.crouch_enabled and not replay and not stage.game_over
+	_cover_label.visible = stage.crouch_blend > 0.5 and not replay
 	# 自由射撃の再表示チップはリプレイ中だけ隠す（カードが隠れている間のみ出す）
 	if _show_result_chip.visible or replay:
 		_show_result_chip.visible = _result_root != null and not _result_root.visible \
