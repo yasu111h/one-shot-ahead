@@ -1,18 +1,22 @@
 extends SniperStage
-## 「並走する列車」ステージ(実装指示書§5-D 併走狙撃)。
-## プレイヤーは走る列車の屋根の上。標的はもう1本の線路を走る列車の中。
-## 両方が実際に動いており速度が違う(自分22m/s・相手14m/s・同方向)ため、
-## 相手の窓が相対8m/sで後方へ流れていく=「窓が並ぶ一瞬」を撃ち抜く。
-## 標的列車が完全に後方へ抜けたら前方へループ=すれ違いが何度も来る。
+## 「対向すれ違い列車」ステージ(実装指示書§5-D 併走狙撃)。
+## プレイヤーは走る列車の屋根の上(-Z方向へ90km/h)。標的は隣の線路を"対向"で
+## 走る列車の中(+Z方向へ80km/h)。相対速度≒170km/h(47m/s)で猛烈にすれ違うため、
+## 標的の窓が一瞬だけ照準を横切る=その刹那に撃ち込む。
+## 標的列車が後方へ抜けたら前方遠くへループ=「別の列車」が何度も来る
+## (このときガラスは全て修復＝無傷の車両として来る)。全悪人を倒すまで繰り返す。
 ## 貨車の荷台や屋根の上にも見張りが立つ(車両の外の標的)。
 ##
-## 実装: 両列車とリグは本当に-Z方向へ走り続ける。地面・枕木・架線柱・茂みは
+## 実装: 両列車とリグは本当に走り続ける。地面・枕木・架線柱・茂みは
 ## 「リグ基準で周期リサイクル」して無限の車窓を作る(座標は数kmまでfloatで安全)。
 
 const TrainLineScript := preload("res://stages/train/train_line.gd")
 
-const PLAYER_SPEED := 22.0     # 自分の列車(m/s)
-const ENEMY_SPEED := 14.0      # 標的の列車(m/s)。同方向でこちらが追い越していく
+const PLAYER_SPEED := 25.0     # 自分の列車(m/s ≒ 90km/h・-Z方向)
+const ENEMY_SPEED := -22.0     # 標的の列車(m/s ≒ 80km/h・対向=+Z方向)。相対47m/s=170km/h
+const ENEMY_START_Z := -150.0  # 標的列車の初期位置(前方)。ここから対向で近づいてくる
+const LOOP_BACK := 130.0       # 標的がこれだけ後方へ抜けたら次の周回へ
+const LOOP_AHEAD := 270.0      # 次の周回の出現位置(リグの前方この距離)
 const PLAYER_TRACK_X := 6.0    # 自分の線路の中心x
 const ENEMY_TRACK_X := -6.0    # 標的の線路の中心x
 var rig_y: float = TrainLineScript.ROOF_Y + 1.9   # 屋根の上に立つ目線
@@ -35,8 +39,9 @@ func _rig_position() -> Vector3:
 
 
 func _configure_rig() -> void:
-	# 標的の列車は左(-X)側。左真横を中心に前後へ振り向ける(自分の車内側=右後方は不可)
-	rig.set_view_limits(15.0, 165.0, -32.0, 14.0)
+	# 標的の列車は左(-X)側。対向で猛速なので前方から来るのを早く捉えられるよう広めに
+	# (真左を中心に前方ほぼ正面〜後方まで。自分の車内側=真後ろだけ不可)
+	rig.set_view_limits(8.0, 172.0, -32.0, 14.0)
 
 
 func _mission_text() -> String:
@@ -243,7 +248,7 @@ func _build_trains() -> void:
 	add_child(etrain)
 	etrain.build(ENEMY_COMP, Color(0.34, 0.14, 0.10))
 	_enemy_len = etrain.total_length(ENEMY_COMP.size())
-	etrain.position = Vector3(ENEMY_TRACK_X, 0.0, -60.0)
+	etrain.position = Vector3(ENEMY_TRACK_X, 0.0, ENEMY_START_Z)
 
 
 func _spawn_targets() -> void:
@@ -335,7 +340,9 @@ func _physics_process(delta: float) -> void:
 		var n: Node3D = c.node
 		n.position.z = rz + wrapf(n.position.z - rz, -c.period * 0.5, c.period * 0.5)
 
-	# 標的の列車が完全に後方へ抜けたら前方へループ(リプレイ・飛翔弾のない隙に)
+	# 標的列車が後方へ抜けたら「別の列車」として前方遠くへループ。
+	# このときガラスを全修復＝無傷の車両として来る(リプレイ・飛翔弾のない隙に)
 	var rel: float = etrain.position.z - rz
-	if rel > 60.0 and not is_replay_active() and bullets_in_flight == 0:
-		etrain.position.z -= rel + _enemy_len + 140.0
+	if rel > LOOP_BACK and not is_replay_active() and bullets_in_flight == 0:
+		etrain.position.z = rz - LOOP_AHEAD - _enemy_len
+		etrain.reset_all_glass()
