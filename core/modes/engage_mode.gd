@@ -84,6 +84,10 @@ func _on_player_hit() -> void:
 	_under_fire_t = UNDER_FIRE_HOLD
 	if _damage_flash != null:
 		_damage_flash.flash(_hits_taken, MAX_HITS)  # 赤フラッシュ＋蓄積ビネット
+	# 被弾しきったら主人公が崩れ落ちる（敵と同じ死亡モーション）。
+	# 勝敗判定は check_fail() が DOWNED を返して確定させる
+	if _hits_taken >= MAX_HITS:
+		stage.player_downed()
 
 
 func check_fail() -> String:

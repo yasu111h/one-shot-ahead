@@ -413,10 +413,13 @@ func _physics_process(delta: float) -> void:
 	# 主人公アバターはスコープを覗き込むまで見える（覗いたら一人称＝非表示）。
 	# バレットカム上映中は「角で構える姿」が画に入るので表示したままにする
 	if girl != null:
-		girl.visible = rig.aim_blend < 0.5 or is_replay_active()
-		# 上下の狙いに合わせて上半身と銃口を向ける（左右はリグの回転で追従済み）
-		girl.set_aim_pitch(rig.get_aim_pitch())
-		girl.set_crouch(crouch_blend)
+		if girl.dead:
+			girl.visible = true   # 死亡モーション中は常に表示（player_downedでスコープは解除済み）
+		else:
+			girl.visible = rig.aim_blend < 0.5 or is_replay_active()
+			# 上下の狙いに合わせて上半身と銃口を向ける（左右はリグの回転で追従済み）
+			girl.set_aim_pitch(rig.get_aim_pitch())
+			girl.set_crouch(crouch_blend)
 	# 照準減速(スティッキーエイム)の更新。空間クエリを使うので物理フレームで計算し、
 	# 入力イベント側はこのキャッシュ値を使う。減速ゾーン内はレティクル中心点が控えめに色づく
 	# （旧オートエイムの「オレンジ＝撃てば当たる」保証ではない。当てるのはプレイヤー自身）
@@ -871,6 +874,16 @@ func _award_kill(dist: int, zone: String) -> int:
 
 
 # ---------------------------------------------------------------- 勝敗
+
+## プレイヤーが被弾しきって倒れたときの見た目演出（モードから呼ばれる）。
+## スコープを覗いていると一人称で崩れ落ちが見えないので、まず肉眼へ戻してから
+## 主人公アバターに死亡モーションを再生させる。勝敗判定（DOWNED）はモードが別途返す。
+func player_downed() -> void:
+	if rig != null:
+		rig.set_zoom_stage(0)   # 肉眼へ戻して三人称で崩れ落ちを見せる
+	if girl != null:
+		girl.play_death()
+
 
 func _fail(msg: String) -> void:
 	if game_over:

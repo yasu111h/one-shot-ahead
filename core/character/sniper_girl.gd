@@ -41,22 +41,22 @@ func _ready() -> void:
 	character.rotation.y = PI + deg_to_rad(BODY_ANGLE_DEG)
 	add_child(character)
 
-	var ap := _find_anim_player(character)
+	_ap = _find_anim_player(character)
 	_skel = _find_skel(character)
-	if ap == null or _skel == null:
+	if _ap == null or _skel == null:
 		push_warning("VRMのAnimationPlayer/Skeletonが見つからないため素立ちのまま")
 		return
-	var lib := ap.get_animation_library("")
+	var lib := _ap.get_animation_library("")
 	if lib == null:
 		lib = AnimationLibrary.new()
-		ap.add_animation_library("", lib)
+		_ap.add_animation_library("", lib)
 	var aim := _bake_from_fbx(IDLE_AIM_FBX, _skel)
 	if aim != null:
 		aim.loop_mode = Animation.LOOP_LINEAR
 		if lib.has_animation("IdleAim"):
 			lib.remove_animation("IdleAim")
 		lib.add_animation("IdleAim", aim)
-		ap.play("IdleAim")
+		_ap.play("IdleAim")
 	_build_gun()
 	# 上半身を曲げるモディファイア（アニメの後に適用される）
 	_bend = TorsoBend.new()
@@ -122,6 +122,8 @@ const POSE_SINK := 0.52   # しゃがみで体が実際に沈む量(m)
 
 
 func set_crouch(blend: float) -> void:
+	if dead:
+		return   # 死亡中は伏せ姿勢を更新しない（崩れ落ちアニメに任せる）
 	if is_equal_approx(blend, _crouch_blend):
 		return
 	# 基準yは初回に取る（_ready時点ではステージがまだ girl.position を設定していない）
