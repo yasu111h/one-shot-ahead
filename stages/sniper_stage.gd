@@ -13,7 +13,7 @@ extends Node3D
 ##                            弾に影響せずHUDにも出ない。風を復活させたら自動で有効化）
 ##
 ## 操作（TABIJIの操作感・マウスキャプチャなし）:
-##   視点   … 右ドラッグ（PC）/ 画面右側ドラッグ（タッチ・1本指追跡）
+##   視点   … 右ドラッグ（PC）/ 画面のどこでもドラッグ（タッチ・最初の1本指を追跡）
 ##   発射   … 左クリック / FIREボタン（Fキーは予備）
 ##   スコープ … Qキー / SCOPEボタンでトグル巡回（1x→4x→8x→1x）。ホイールで段階±1
 ## ※ 息止めは廃止（照準は常に静止・2026-07-10ユーザー決定）
@@ -221,11 +221,11 @@ func is_replay_active() -> bool:
 # ---------------------------------------------------------------- 入力
 
 func _unhandled_input(event: InputEvent) -> void:
-	# タッチ：画面右側(x>幅×0.45)の1本指を追跡し、そのドラッグで視点回転
-	# （ボタン上のタッチはTouchScreenButtonが消費する）
+	# タッチ：画面のどこでも1本指のドラッグで視点回転（最初に触れた指を追跡）。
+	# ボタン（FIRE/SCOPE等のTouchScreenButton・右上のButton群）上のタッチは
+	# そちらが消費して_unhandled_inputまで届かないので、ここに来た指は視点用でよい
 	if event is InputEventScreenTouch:
-		var w := get_viewport().get_visible_rect().size.x
-		if event.pressed and _cam_touch_index == -1 and event.position.x > w * 0.45:
+		if event.pressed and _cam_touch_index == -1:
 			_cam_touch_index = event.index
 		elif not event.pressed and event.index == _cam_touch_index:
 			_cam_touch_index = -1
