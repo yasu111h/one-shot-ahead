@@ -28,11 +28,13 @@ const GUN_POS := Vector3(0.16, 1.19, -0.34)
 const TORSO_PIVOT := Vector3(0.05, 1.12, -0.05)
 
 var _skel: Skeleton3D
+var _ap: AnimationPlayer     # VRMのアニメ（構えIdleAim／死亡Death）
 var _torso: Node3D          # 銃をぶら下げる支点（ピッチで回す）
 var _bend: TorsoBend        # 上半身の骨を曲げるモディファイア
 var _crouch: CrouchPose     # 伏せ（しゃがみ）ポーズのモディファイア
 var _crouch_blend := 0.0
 var _base_y := INF          # 立ち姿勢のローカル基準y（伏せの沈み用・初回set_crouchで取得）
+var dead := false           # 被弾しきって崩れ落ちた（Engageの死亡演出）
 
 
 func _ready() -> void:
@@ -119,6 +121,28 @@ func set_aim_pitch(pitch: float) -> void:
 ## （据え置きだと相対的に体がせり上がり、脚がカメラの前にドアップになる）
 const CAM_DROP := 0.85    # ステージ側 CROUCH_CAM_DROP と同じ値
 const POSE_SINK := 0.52   # しゃがみで体が実際に沈む量(m)
+
+
+## 被弾しきって倒れる（Engageの死亡演出。ステージの player_downed から呼ばれる）。
+## 敵と同じ崩落アニメ(_build_shot_anim)を流用し、構え・伏せモディファイアを止めてから再生する
+func play_death() -> void:
+	if dead:
+		return
+	dead = true
+	# 構え・伏せの骨補正を止める（崩れ落ちアニメと喧嘩させない）
+	if _bend != null:
+		_bend.active = false
+	if _crouch != null:
+		_crouch.active = false
+	if _ap != null and _skel != null:
+		var death := TargetHuman._build_shot_anim(_skel)
+		if death != null:
+			var lib := _ap.get_animation_library("")
+			if lib != null:
+				if lib.has_animation("Death"):
+					lib.remove_animation("Death")
+				lib.add_animation("Death", death)
+				_ap.play("Death")
 
 
 func set_crouch(blend: float) -> void:
