@@ -149,20 +149,20 @@ func _win_mat(seed_v: float, lit: float, warm: float) -> ShaderMaterial:
 	return m
 
 
-## 地面(通り)。夜露に濡れたアスファルト(街明かりをわずかに映す)
+## 地面。ワールド座標シェーダで「街区・道路・歩道・街灯の光だまり」を描く
+## （ビル窓と同じ流儀）。4km四方＝どこまで見ても街の地表が続く
 func _build_ground() -> void:
 	var g := PlaneMesh.new()
-	g.size = Vector2(700.0, 700.0)
-	var m := StandardMaterial3D.new()
-	m.albedo_color = Color(0.026, 0.030, 0.040)
-	m.roughness = 0.45
+	g.size = Vector2(4000.0, 4000.0)
+	var m := ShaderMaterial.new()
+	m.shader = preload("res://shaders/city_ground.gdshader")
 	var mi := MeshInstance3D.new()
 	mi.mesh = g
 	mi.material_override = m
 	add_child(mi)
 	var shape := CollisionShape3D.new()
 	var bx := BoxShape3D.new()
-	bx.size = Vector3(700.0, 1.0, 700.0)
+	bx.size = Vector3(4000.0, 1.0, 4000.0)
 	shape.shape = bx
 	shape.position = Vector3(0.0, -0.5, 0.0)
 	add_child(shape)
