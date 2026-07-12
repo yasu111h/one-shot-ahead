@@ -44,6 +44,24 @@ void sky() {
 		col = mix(horizon, vec3(0.42, 0.48, 0.52), clamp(-dir.y * 3.0, 0.0, 1.0));
 	}
 
+	// 地平線際の遠山シルエット（3層・ごく控えめ）。地形メッシュ(±4.2km)の縁と
+	// 真の地平線の間のわずかな隙間を、霞んだ山並みの層で埋めて
+	// 「どこまでも山が続く」ように見せる。視点(山頂165m)からは水平よりやや下に見えるため、
+	// 帯は dir.y≈0 のすぐ下に沈めて実地形の陰から頭だけ覗かせる
+	if (dir.y < 0.02) {
+		float ang = atan(dir.x, dir.z);
+		// 遠い層から手前の層の順に重ねる（i=0が最遠＝淡い、i=2が最手前＝やや濃い）
+		for (int i = 0; i < 3; i++) {
+			float fi = float(i);
+			float top = 0.002 - fi * 0.011
+				+ (fbm(vec2(ang * (2.0 + fi * 0.9), fi * 7.3)) - 0.5) * 0.016;
+			if (dir.y < top) {
+				vec3 ridge_col = mix(vec3(0.44, 0.55, 0.52), horizon, 0.72 - fi * 0.14);
+				col = mix(col, ridge_col, 0.5);
+			}
+		}
+	}
+
 	vec3 s = normalize(sun_dir);
 	float sd = clamp(dot(dir, s), 0.0, 1.0);
 	// 太陽の円盤＋広いハロ

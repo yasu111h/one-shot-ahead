@@ -6,11 +6,16 @@ extends StaticBody3D
 ## 尾根（リッジ）ノイズの山並みに、①プレイヤーの主峰 ②蛇行する川の谷
 ## ③標的の立ち場（平場パッド）を彫り込む。針葉樹はMultiMeshで散布する。
 
-const X_HALF := 700.0        # 横幅 ±700m
+const X_HALF := 700.0        # プレイエリアの横幅 ±700m（詳細メッシュ＋当たり判定）
 const Z_MIN := -1500.0       # 奥行き（-Z が標的方向）
 const Z_MAX := 260.0
 const MESH_STEP := 10.0      # 見た目メッシュの分割ピッチ(m)
 const COL_STEP := 3.0        # 当たり判定のサンプルピッチ(m)
+
+# --- 遠景の山地（プレイエリアの外周。同じノイズから生成＝地平線まで山が続く） ---
+# ※当たり判定なし（標的は最遠1020m・遠景は1.5km以遠のため実弾はほぼ届かない）
+const FAR_EXTENT := 4200.0   # 遠景の広がり ±4.2km
+const FAR_STEP := 64.0       # 遠景メッシュの分割ピッチ(m)
 
 const WATER_Y := 6.5         # 川の水面の高さ
 const RIVER_BED := 2.2       # 川底の高さ
@@ -65,6 +70,7 @@ func _ready() -> void:
 	collision_layer = 0b0001  # レイヤ1: 地形（弾はここで止まる）
 	collision_mask = 0
 	_build_mesh()
+	_build_far_mesh()
 	_build_collision()
 	_build_river()
 	_build_trees()
@@ -188,6 +194,68 @@ func _build_mesh() -> void:
 	add_child(mi)
 
 
+## 遠景の山地メッシュ。同じ get_height を粗いピッチでサンプルして±4.2kmまで敷く
+## ＝空へ撃ったミス弾のバレットカムでも「どこまでも山が続く」世界に見える。
+## プレイエリア内は詳細メッシュが上に載るので、重なる部分は0.5m沈めて隠す
+func _build_far_mesh() -> void:
+	var n := int(FAR_EXTENT * 2.0 / FAR_STEP) + 1
+	var verts := PackedVector3Array()
+	var normals := PackedVector3Array()
+	verts.resize(n * n)
+	normals.resize(n * n)
+	for iz in n:
+		for ix in n:
+			var x := ix * FAR_STEP - FAR_EXTENT
+			var z := iz * FAR_STEP - FAR_EXTENT
+			var idx := iz * n + ix
+			var y := get_height(x, z)
+			if _inside_play_area(x, z):
+				y -= 0.5  # 詳細メッシュの下へ沈めてZファイトを防ぐ
+			verts[idx] = Vector3(x, y, z)
+			var e := FAR_STEP
+			var dnx := get_height(x - e, z) - get_height(x + e, z)
+			var dnz := get_height(x, z - e) - get_height(x, z + e)
+			normals[idx] = Vector3(dnx, 2.0 * e, dnz).normalized()
+
+	var indices := PackedInt32Array()
+	for iz in n - 1:
+		for ix in n - 1:
+			# プレイエリアの完全に内側のセルは張らない（詳細メッシュに任せる）
+			var cx := (float(ix) + 0.5) * FAR_STEP - FAR_EXTENT
+			var cz := (float(iz) + 0.5) * FAR_STEP - FAR_EXTENT
+			if _inside_play_area(cx - FAR_STEP, cz - FAR_STEP) \
+					and _inside_play_area(cx + FAR_STEP, cz + FAR_STEP):
+				continue
+			var a := iz * n + ix
+			var b := a + 1
+			var c := a + n
+			var dd := c + 1
+			indices.append(a)
+			indices.append(b)
+			indices.append(c)
+			indices.append(b)
+			indices.append(dd)
+			indices.append(c)
+
+	var arrays := []
+	arrays.resize(Mesh.ARRAY_MAX)
+	arrays[Mesh.ARRAY_VERTEX] = verts
+	arrays[Mesh.ARRAY_NORMAL] = normals
+	arrays[Mesh.ARRAY_INDEX] = indices
+	var mesh := ArrayMesh.new()
+	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+	var mi := MeshInstance3D.new()
+	mi.mesh = mesh
+	var mat := ShaderMaterial.new()
+	mat.shader = preload("res://shaders/mountain_terrain.gdshader")
+	mi.material_override = mat
+	add_child(mi)
+
+
+func _inside_play_area(x: float, z: float) -> bool:
+	return absf(x) < X_HALF and z > Z_MIN and z < Z_MAX
+
+
 func _build_collision() -> void:
 	# COL_STEPピッチでサンプルし、均一scaleで実寸へ（desert_terrainと同方式）
 	var sx := int(X_HALF * 2.0 / COL_STEP) + 1
@@ -214,13 +282,15 @@ func _build_collision() -> void:
 func _build_river() -> void:
 	var mat := ShaderMaterial.new()
 	mat.shader = preload("res://shaders/mountain_river.gdshader")
-	# 蛇行(±97m)を覆う幅240mの帯を、x方向に分割して川筋に追従させる
-	var seg_w := 100.0
-	var x := -X_HALF
-	while x < X_HALF:
+	# 蛇行(±97m)を覆う幅240mの帯を、x方向に分割して川筋に追従させる。
+	# 遠景の山地まで川が続いて見えるよう、プレイエリア外は粗い分割で±4.2kmまで延長
+	var x := -FAR_EXTENT
+	while x < FAR_EXTENT:
+		var seg_w := 100.0 if absf(x) < X_HALF else 400.0
 		var mid := x + seg_w * 0.5
 		var plane := PlaneMesh.new()
-		plane.size = Vector2(seg_w + 2.0, 240.0)
+		# 外周は1枚が長く蛇行が幅内でずれるので、帯を広めに取る
+		plane.size = Vector2(seg_w + 2.0, 240.0 if absf(x) < X_HALF else 340.0)
 		var mi := MeshInstance3D.new()
 		mi.mesh = plane
 		mi.material_override = mat
