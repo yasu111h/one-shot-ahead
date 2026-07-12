@@ -74,6 +74,8 @@ var small_rooms: Array[Vector3] = []   # 小窓部屋の標的スポーン点(�
 var civil_rooms: Array[Vector3] = []   # 民間人が立つ部屋のスポーン点(撃てば即FAIL)
 var mid_walk_from := Vector3.ZERO      # 中距離ビルの広間を歩く悪人の往復点
 var mid_walk_to := Vector3.ZERO
+var side_walks: Array = []             # サイドビル広間の往復点 [{from, to}]（ワールド）
+var side_stands: Array[Vector3] = []   # サイドビルの立ち見張り（屋上・小窓）
 
 var _metal: StandardMaterial3D
 var _concrete: StandardMaterial3D
@@ -90,6 +92,7 @@ func _ready() -> void:
 	_build_target_building()
 	_build_mid_building()
 	_build_far_towers()
+	_build_side_buildings()
 	_build_towers()
 	_build_street_glow()
 
@@ -455,6 +458,8 @@ const CLEAR_LANES := [
 	[-80.0, -20.0, -440.0, -180.0],  # 左手の射線(中距離ビル370m・狙撃塔480m)
 	[20.0, 70.0, -250.0, -180.0],    # 右手の射線(狙撃塔660mへの抜け)
 	[-210.0, 210.0, -129.0, -111.0], # クロス通り(信号待ちのVIP車が走る)
+	[34.0, 130.0, -55.0, 40.0],      # 右手サイドビル(棟6)の敷地＋射線
+	[-125.0, -34.0, -80.0, 40.0],    # 左手サイドビル(棟7)の敷地＋射線
 ]
 
 func _in_corridor(x: float, z: float, pad := 0.0) -> bool:
@@ -462,6 +467,160 @@ func _in_corridor(x: float, z: float, pad := 0.0) -> bool:
 		if x > l[0] - pad and x < l[1] + pad and z > l[2] - pad and z < l[3] + pad:
 			return true
 	return false
+
+
+# ---------------------------------------------------------------- サイドビル(棟6・棟7)
+
+## 視点を左右へ振った先の標的ビル（2026-07-12ユーザー指示：中央集中の解消）。
+## 回転したコンテナの中にローカル座標で組む＝正面(ローカル+Z)がプレイヤーを向く。
+##   広間: 開口(2.8m)より広い部屋(5.6m)を悪人が往復＝窓に現れた一瞬だけ撃てる
+##   小窓: 見張りの悪人が立つ／広間の窓際に民間人（誤射禁止の緊張は維持）
+##   屋上: 見張りが立つ（遮蔽なしのご褒美標的。夜空を背にシルエットが浮かぶ）
+func _build_side_buildings() -> void:
+	# 右手（プレイヤーから約115m・yaw≈-54°）
+	_build_side_building(Vector3(100.0, 0.0, -30.0), 71.0, true)
+	# 左手（約135m・yaw≈+49°）
+	_build_side_building(Vector3(-95.0, 0.0, -55.0), 83.0, false)
+
+
+func _build_side_building(origin: Vector3, seed_v: float, roof_guard: bool) -> void:
+	var hw := 9.0        # 半幅
+	var h := 34.0        # 高さ
+	var depth := 16.0
+	var ft := 0.7        # 正面壁の厚み
+	var bd := 2.8        # 部屋の帯の奥行き
+	var player := Vector3(8.6, 0.0, 35.4)   # 狙撃地点（水平投影）
+
+	# コンテナ：ローカル+Z面（正面）がプレイヤーを向く回転
+	var to_player := player - origin
+	var root := StaticBody3D.new()
+	root.collision_layer = 0b0001
+	root.collision_mask = 0
+	root.position = origin
+	root.rotation.y = atan2(to_player.x, to_player.z)
+	add_child(root)
+	var mat := _win_mat(seed_v, 0.30, 0.25)
+
+	# 開口（正面壁ローカルXY・下端y）。広間=横長／小窓=見張り
+	var hall := Rect2(-1.4, 20.35, 2.8, 2.3)
+	var watch := Rect2(3.6, 26.3, 1.2, 1.8)
+	var holes: Array[Rect2] = [hall, watch]
+
+	# 正面の壁（開口だけ穴）→部屋の帯→本体
+	var fz := depth * 0.5                 # 正面の外面（ローカル+Z）
+	var band_z0 := fz - ft                # 部屋の帯（手前/奥）
+	var band_z1 := band_z0 - bd
+	_grid_fill_in(root, fz - ft * 0.5, ft, holes, mat, -hw, hw, 0.0, h)
+	_grid_fill_in(root, (band_z0 + band_z1) * 0.5, bd, holes, mat, -hw, hw, 0.0, h)
+	# 本体（部屋の帯より奥〜背面までの詰まった塊）
+	_box_in(root, Vector3(hw * 2.0, h, band_z1 + depth * 0.5),
+		Vector3(0.0, h * 0.5, (band_z1 - depth * 0.5) * 0.5), mat, true)
+
+	# 広間（内寸5.6m＝開口2.8mより広い）：内装・灯り・ガラス・往復点
+	var zc := (band_z0 + band_z1) * 0.5
+	var room := Rect2(-2.8, hall.position.y, 5.6, hall.size.y)
+	_side_room_in(root, room, fz, band_z0, band_z1)
+	var wy := hall.position.y + 0.95
+	side_walks.append({
+		"from": root.to_global(Vector3(-2.3, wy, zc)),
+		"to": root.to_global(Vector3(2.3, wy, zc)),
+	})
+	# 民間人：広間の窓際・右端（撃てば即FAIL）
+	civil_rooms.append(root.to_global(Vector3(1.25, wy, zc + 0.5)))
+
+	# 小窓の見張り
+	_side_room_in(root, watch, fz, band_z0, band_z1)
+	side_stands.append(root.to_global(
+		Vector3(watch.position.x + watch.size.x * 0.5, watch.position.y + 0.95, zc + 0.3)))
+
+	# 屋上の見張り（正面寄り・遮蔽なし）＋屋上の縁と塔屋（シルエットの土台）
+	_box_in(root, Vector3(hw * 2.0 + 0.4, 0.9, 0.7), Vector3(0.0, h + 0.45, fz - 0.35), _concrete, true)
+	_box_in(root, Vector3(2.2, 2.2, 2.2), Vector3(-hw + 2.6, h + 1.1, -2.0), _concrete, true)
+	if roof_guard:
+		side_stands.append(root.to_global(Vector3(2.0, h + 0.95, fz - 1.6)))
+
+	# 屋上の赤い航空障害灯（遠目でもビルの存在が読める）
+	var beacon := OmniLight3D.new()
+	beacon.light_color = Color(1.0, 0.2, 0.15)
+	beacon.light_energy = 0.7
+	beacon.omni_range = 8.0
+	beacon.shadow_enabled = false
+	beacon.position = Vector3(0.0, h + 1.4, -2.0)
+	root.add_child(beacon)
+
+
+## _box のローカル版（親ノード指定）。コリジョンも親に付く
+func _box_in(parent: Node, size: Vector3, pos: Vector3, mat: Material, coll: bool) -> MeshInstance3D:
+	var mesh := BoxMesh.new()
+	mesh.size = size
+	var mi := MeshInstance3D.new()
+	mi.mesh = mesh
+	mi.material_override = mat
+	mi.position = pos
+	parent.add_child(mi)
+	if coll:
+		var shape := CollisionShape3D.new()
+		var bx := BoxShape3D.new()
+		bx.size = size
+		shape.shape = bx
+		shape.position = pos
+		parent.add_child(shape)
+	return mi
+
+
+## _grid_fill のローカル版（親ノード指定・親のローカル座標で組む）
+func _grid_fill_in(parent: Node, z_center: float, z_depth: float, holes: Array[Rect2],
+		mat: Material, x_min: float, x_max: float, y_min: float, y_max: float) -> void:
+	var xs: Array[float] = [x_min, x_max]
+	var ys: Array[float] = [y_min, y_max]
+	for hole in holes:
+		xs.append(hole.position.x)
+		xs.append(hole.end.x)
+		ys.append(hole.position.y)
+		ys.append(hole.end.y)
+	xs = _uniq_sorted(xs)
+	ys = _uniq_sorted(ys)
+	for i in xs.size() - 1:
+		for j in ys.size() - 1:
+			var w := xs[i + 1] - xs[i]
+			var hh := ys[j + 1] - ys[j]
+			if w < 0.01 or hh < 0.01:
+				continue
+			var c := Vector2(xs[i] + w * 0.5, ys[j] + hh * 0.5)
+			var inside := false
+			for hole in holes:
+				if hole.has_point(c):
+					inside = true
+					break
+			if inside:
+				continue
+			_box_in(parent, Vector3(w, hh, z_depth), Vector3(c.x, c.y, z_center), mat, true)
+
+
+## _build_small_room のローカル版（rootの中に内装・灯り・ガラスを組む）
+func _side_room_in(root: Node3D, rect: Rect2, fz: float, band_z0: float, band_z1: float) -> void:
+	var cx := rect.position.x + rect.size.x * 0.5
+	var fy := rect.position.y
+	var w := rect.size.x
+	var h := rect.size.y
+	var zc := (band_z0 + band_z1) * 0.5
+	var zd := band_z0 - band_z1
+	_box_in(root, Vector3(w, 0.1, zd), Vector3(cx, fy + 0.05, zc), _warm_wall, true)
+	_box_in(root, Vector3(w, 0.1, zd), Vector3(cx, fy + h - 0.05, zc), _warm_wall, false)
+	for sx in [-1.0, 1.0]:
+		_box_in(root, Vector3(0.1, h, zd),
+			Vector3(cx + sx * (w * 0.5 - 0.05), fy + h * 0.5, zc), _warm_wall, false)
+	_box_in(root, Vector3(w, h, 0.1), Vector3(cx, fy + h * 0.5, band_z1 + 0.05), _warm_wall, true)
+	var light := OmniLight3D.new()
+	light.light_color = Color(1.0, 0.78, 0.5)
+	light.light_energy = 1.8
+	light.omni_range = 4.5
+	light.shadow_enabled = false
+	light.position = Vector3(cx, fy + h - 0.3, zc)
+	root.add_child(light)
+	var pane := GlassPane.new(Vector2(w, h))
+	root.add_child(pane)
+	pane.position = Vector3(cx, fy + h * 0.5, (fz + band_z0) * 0.5)
 
 
 ## 周囲のタワー群。高さも点灯パターンもばらして「街」に見せる

@@ -37,6 +37,9 @@ const CAB_TOP := CHASSIS_TOP + CAB_H
 var vip_target: Node3D = null    # ステージが seat_vip() で渡す(座席追従とalive監視)
 
 var _cars: Array = []            # 環境カー {body, dir, speed}
+# 被弾リアクション対象の車の状態: body -> {state: "ok"/"spin"/"burn"/"wreck",
+#   t: float, spin_rate: float, vel: Vector3, fire: Node3D, light: OmniLight3D}
+var _car_states: Dictionary = {}
 var _vip: AnimatableBody3D
 var _vip_window: AnimatableBody3D
 var _vip_window_y0 := 0.0        # 窓ガラスの閉位置y(ローカル)
@@ -105,6 +108,11 @@ func _make_car(color: Color) -> AnimatableBody3D:
 	_panel(body, Vector3(2.3, 0.68, 1.7), Vector3(-0.18, 1.43, 0.0), mat)          # キャビン
 	_add_tires(body, 4.4, 1.85)
 	_add_car_lights(body, 4.4, 1.85, 1.0)
+	# 被弾リアクション対象（エンジン=前部/タイヤ/車体。VIP車は防弾のため対象外）
+	body.set_meta("prop_owner", self)
+	body.set_meta("car_len", 4.4)
+	_car_states[body] = {"state": "ok", "t": 0.0, "spin_rate": 0.0,
+		"vel": Vector3.ZERO, "fire": null, "light": null}
 	add_child(body)
 	return body
 
@@ -321,14 +329,18 @@ func _set_signal(green: bool) -> void:
 # ---------------------------------------------------------------- 動き
 
 func _physics_process(delta: float) -> void:
-	# 環境カー: 等速で流れ、端まで行ったら反対端へ(遠方の暗がりで折り返す)
+	# 環境カー: 等速で流れ、端まで行ったら反対端へ(遠方の暗がりで折り返す)。
+	# 撃たれた車（spin/burn/wreck）は通常走行から外れて事故処理へ
 	for c in _cars:
 		var b: AnimatableBody3D = c.body
+		if _car_states.has(b) and _car_states[b].state != "ok":
+			continue
 		b.position.x += c.speed * c.dir * delta
 		if c.dir > 0.0 and b.position.x > CAR_RANGE:
 			b.position.x = -CAR_RANGE
 		elif c.dir < 0.0 and b.position.x < -CAR_RANGE:
 			b.position.x = CAR_RANGE
+	_update_wrecks(delta)
 	_update_vip(delta)
 	_sync_vip_target()
 
@@ -394,3 +406,183 @@ func _sync_vip_target() -> void:
 func _apply_window() -> void:
 	_vip_window.position.y = _vip_window_y0 - WINDOW_TRAVEL * _window_open
 	_vip_light.light_energy = 1.5 * _window_open
+
+
+# ---------------------------------------------------------------- 被弾リアクション
+
+## 弾が車に当たった（ステージが呼ぶ）。部位で反応を変える:
+##   エンジン(前部) → 炎上して停止（炎・煙・ちらつく灯り）
+##   タイヤ         → バーストしてスピン→壁ぎわで停止（事故）
+##   車体           → 反応なし（falseを返し、既定の着弾火花に任せる）
+func on_prop_shot(body: Object, point: Vector3, dir: Vector3) -> bool:
+	if not (body is Node3D) or not _car_states.has(body):
+		return false
+	var st: Dictionary = _car_states[body]
+	if st.state == "burn":
+		return true   # もう燃えている（追撃は吸うだけ）
+	var l: float = body.get_meta("car_len", 4.4)
+	var local: Vector3 = (body as Node3D).to_local(point)
+	# タイヤ: 車軸付近の低い位置・車体の側面寄り
+	# （前輪はエンジン域と重なるので、タイヤを先に判定する）
+	if local.y < 0.55 and absf(absf(local.x) - l * 0.32) < 0.5 and absf(local.z) > 0.55:
+		_blowout(body as Node3D, st, signf(local.z), dir)
+		return true
+	# エンジン: 前部(+X)のボンネット高さ
+	if local.x > l * 0.24 and local.y > 0.3 and local.y < 1.2:
+		_ignite(body as Node3D, st)
+		return true
+	return false
+
+
+## エンジン命中: 炎上。走行中なら惰性で流れて停まる。炎・煙・オレンジの明滅
+func _ignite(body: Node3D, st: Dictionary) -> void:
+	# スピン中に撃たれた場合は回転を殺して燃えるだけにする
+	st.state = "burn"
+	st.t = 0.0
+	if st.vel == Vector3.ZERO:
+		st.vel = _cruise_velocity(body)   # 走行中の惰性（駐車車はゼロ）
+	if st.fire == null:
+		st.fire = _make_fire(body)
+		var flick := OmniLight3D.new()
+		flick.light_color = Color(1.0, 0.55, 0.2)
+		flick.light_energy = 2.2
+		flick.omni_range = 9.0
+		flick.shadow_enabled = false
+		flick.position = Vector3(body.get_meta("car_len", 4.4) * 0.34, 1.3, 0.0)
+		body.add_child(flick)
+		st.light = flick
+
+
+## タイヤ命中: バースト。パンクした側へ切れ込みながらスピンして停まる
+func _blowout(body: Node3D, st: Dictionary, side: float, dir: Vector3) -> void:
+	if st.state != "ok":
+		return
+	st.state = "spin"
+	st.t = 0.0
+	st.vel = _cruise_velocity(body)
+	_tire_smoke(body)
+	if st.vel == Vector3.ZERO:
+		return   # 駐車車のタイヤはバースト煙だけ（動いていないのでスピンなし）
+	# パンク側＋弾の押しでヨー回転（1.6〜2.4 rad/s をランダムに）
+	st.spin_rate = side * randf_range(1.6, 2.4) * signf(st.vel.x if absf(st.vel.x) > 0.1 else 1.0)
+
+
+## 走行中の車の現在速度ベクトル（_carsから引く。いなければゼロ＝駐車車）
+func _cruise_velocity(body: Node3D) -> Vector3:
+	for c in _cars:
+		if c.body == body:
+			return Vector3(c.speed * c.dir, 0.0, 0.0)
+	return Vector3.ZERO
+
+
+## 事故処理: spin=回りながら減速して停止 / burn=惰性で停まり燃え続ける
+func _update_wrecks(delta: float) -> void:
+	for body in _car_states:
+		var st: Dictionary = _car_states[body]
+		if st.state == "ok" or st.state == "wreck" or not is_instance_valid(body):
+			continue
+		st.t += delta
+		var b := body as Node3D
+		match st.state:
+			"spin":
+				# 減速(2.2 m/s^2)しつつヨー回転も減衰。止まったらwreck
+				var speed: float = st.vel.length()
+				speed = maxf(speed - 5.5 * delta, 0.0)
+				st.vel = st.vel.normalized() * speed if speed > 0.0 else Vector3.ZERO
+				b.position += st.vel * delta
+				b.rotation.y += st.spin_rate * clampf(1.0 - st.t / 2.6, 0.0, 1.0) * delta
+				if speed <= 0.05:
+					st.state = "wreck"
+			"burn":
+				# 惰性で流れて停まる（燃えたまま）。ハザード的に灯りを明滅させる
+				var speed2: float = st.vel.length()
+				speed2 = maxf(speed2 - 7.0 * delta, 0.0)
+				st.vel = st.vel.normalized() * speed2 if speed2 > 0.0 else Vector3.ZERO
+				b.position += st.vel * delta
+				if st.light != null:
+					st.light.light_energy = 1.8 + 1.0 * sin(st.t * 17.0) * randf_range(0.7, 1.0)
+
+
+## 炎＋煙のパーティクル（ボンネットから。血なし・爆発なしの「燃える車」）
+func _make_fire(body: Node3D) -> Node3D:
+	var root := Node3D.new()
+	root.position = Vector3(body.get_meta("car_len", 4.4) * 0.34, 1.05, 0.0)
+	body.add_child(root)
+	# 炎（橙→赤の上昇粒）
+	var fire := CPUParticles3D.new()
+	fire.amount = 26
+	fire.lifetime = 0.55
+	fire.direction = Vector3.UP
+	fire.spread = 14.0
+	fire.initial_velocity_min = 2.2
+	fire.initial_velocity_max = 4.2
+	fire.gravity = Vector3(0, 2.0, 0)
+	fire.scale_amount_min = 0.5
+	fire.scale_amount_max = 1.1
+	fire.emission_shape = CPUParticles3D.EMISSION_SHAPE_BOX
+	fire.emission_box_extents = Vector3(0.55, 0.08, 0.5)
+	var fm := SphereMesh.new()
+	fm.radius = 0.16
+	fm.height = 0.32
+	var fmat := StandardMaterial3D.new()
+	fmat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	fmat.albedo_color = Color(1.0, 0.55, 0.12)
+	fmat.emission_enabled = true
+	fmat.emission = Color(1.0, 0.45, 0.08)
+	fmat.emission_energy_multiplier = 2.4
+	fm.material = fmat
+	fire.mesh = fm
+	root.add_child(fire)
+	# 黒煙（ゆっくり大きく立ちのぼる）
+	var smoke := CPUParticles3D.new()
+	smoke.amount = 14
+	smoke.lifetime = 2.6
+	smoke.direction = Vector3.UP
+	smoke.spread = 10.0
+	smoke.initial_velocity_min = 1.2
+	smoke.initial_velocity_max = 2.2
+	smoke.gravity = Vector3(0.4, 1.4, 0)
+	smoke.scale_amount_min = 0.8
+	smoke.scale_amount_max = 2.4
+	var sm := SphereMesh.new()
+	sm.radius = 0.3
+	sm.height = 0.6
+	var smat := StandardMaterial3D.new()
+	smat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	smat.albedo_color = Color(0.08, 0.08, 0.09, 0.65)
+	smat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	sm.material = smat
+	smoke.mesh = sm
+	smoke.position.y = 0.5
+	root.add_child(smoke)
+	return root
+
+
+## タイヤバーストの白煙（一瞬）
+func _tire_smoke(body: Node3D) -> void:
+	var p := CPUParticles3D.new()
+	p.amount = 18
+	p.lifetime = 0.9
+	p.one_shot = true
+	p.direction = Vector3.UP
+	p.spread = 55.0
+	p.initial_velocity_min = 2.0
+	p.initial_velocity_max = 4.5
+	p.gravity = Vector3(0, -1.5, 0)
+	p.scale_amount_min = 0.4
+	p.scale_amount_max = 1.0
+	var m := SphereMesh.new()
+	m.radius = 0.18
+	m.height = 0.36
+	var mat := StandardMaterial3D.new()
+	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	mat.albedo_color = Color(0.75, 0.73, 0.7, 0.6)
+	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	m.material = mat
+	p.mesh = m
+	p.position = Vector3(0.0, 0.4, 0.0)
+	body.add_child(p)
+	p.emitting = true
+	get_tree().create_timer(1.5).timeout.connect(func() -> void:
+		if is_instance_valid(p):
+			p.queue_free())

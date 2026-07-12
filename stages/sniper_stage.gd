@@ -367,7 +367,8 @@ func _do_fire() -> void:
 		return
 	# ミス弾（何にも当たらない弾）も、設定ONならバレットカムで見送る
 	# （誤射＝民間人命中の予測弾は従来どおり実弾で見せる）
-	if predicted.is_empty() and Settings.miss_replay_enabled and miss_replay_allowed:
+	if predicted.is_empty() and Settings.miss_replay_enabled and miss_replay_allowed \
+			and not _prop_on_line(start, dir):
 		_start_miss_replay(start, dir)
 		return
 	# 通常弾：実弾（Ballisticsの毎フレーム積分。既定は直線・等速）を飛ばし、
@@ -510,6 +511,15 @@ func _apply_spread(dir: Vector3) -> Vector3:
 	return (dir + offset_dir * tan(ang)).normalized()
 
 
+## 射線上にプロップ（乗り物レイヤのうちprop_owner持ち＝反応する車）がいるか。
+## いる場合はミスリプレイにせず実弾を飛ばす＝命中の瞬間に部位リアクションが出る。
+## （ミスリプレイの着弾予測は地形しか見ないため、車を素通りする映像になるのを防ぐ）
+func _prop_on_line(start: Vector3, dir: Vector3) -> bool:
+	var query := PhysicsRayQueryParameters3D.create(start, start + dir * 1500.0, 0b1000)
+	var hit := get_world_3d().direct_space_state.intersect_ray(query)
+	return not hit.is_empty() and hit.collider != null and hit.collider.has_meta("prop_owner")
+
+
 # ---------------------------------------------------------------- 照準減速(スティッキーエイム)
 
 ## 照準減速: 照準レイの近くに「見えている敵標的」がいる間だけドラッグ感度を落とし、
@@ -645,6 +655,17 @@ func _on_bullet_hit(result: Dictionary, bullet: Bullet) -> void:
 	var normal: Vector3 = result.get("normal", Vector3.UP)
 	if collider and collider.has_meta("target_root"):
 		_handle_target_hit(result, bullet)
+	elif collider and collider.has_meta("prop_owner"):
+		# 汎用プロップ（走る車など）: 持ち主に部位リアクションを任せる
+		# （エンジン炎上・タイヤパンク等。標的ではないのでミス扱いは変わらない）
+		var owner: Object = collider.get_meta("prop_owner")
+		var handled := false
+		if owner != null and is_instance_valid(owner) and owner.has_method("on_prop_shot"):
+			handled = owner.on_prop_shot(collider, result.position, bullet.velocity.normalized())
+		if not handled:
+			fx.impact_burst(result.position, normal)
+		mode.on_miss()
+		_check_end()
 	else:
 		# ビルの窓(シェーダ描き)ならガラス割れ演出。それ以外は地形着弾のフレア＋土煙
 		if WindowBreak.try_break(self, result.position, normal, bullet.velocity.normalized()):
