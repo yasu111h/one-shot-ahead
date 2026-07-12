@@ -62,6 +62,8 @@ var girl_offset := Vector3(-0.55, -1.8, -1.0)
 var _walkers: Array = []  # {follow: PathFollow3D, target: Node, speed: float, dir: float}
 var _pending_fire := false
 var _cam_touch_index := -1
+var _touch_pts := {}      # 押下中の全タッチ index -> 現在位置（ピンチ判定用）
+var _pinch_dist := -1.0   # ピンチ中の指の間隔(px)。-1=ピンチしていない
 var _is_touch := false
 var _stick_factor := 1.0  # 照準減速の現在値(物理フレームごとに更新。1.0=減速なし)
 
@@ -221,17 +223,33 @@ func is_replay_active() -> bool:
 # ---------------------------------------------------------------- 入力
 
 func _unhandled_input(event: InputEvent) -> void:
-	# タッチ：画面のどこでも1本指のドラッグで視点回転（最初に触れた指を追跡）。
+	# タッチ：1本指ドラッグ＝画面のどこでも視点回転／2本指ピンチ＝スコープ倍率の連続変更。
 	# ボタン（FIRE/SCOPE等のTouchScreenButton・右上のButton群）上のタッチは
-	# そちらが消費して_unhandled_inputまで届かないので、ここに来た指は視点用でよい
+	# そちらが消費して_unhandled_inputまで届かないので、ここに来た指は視点・ピンチ用でよい
 	if event is InputEventScreenTouch:
-		if event.pressed and _cam_touch_index == -1:
-			_cam_touch_index = event.index
-		elif not event.pressed and event.index == _cam_touch_index:
-			_cam_touch_index = -1
+		if event.pressed:
+			_touch_pts[event.index] = event.position
+			if _cam_touch_index == -1:
+				_cam_touch_index = event.index
+		else:
+			_touch_pts.erase(event.index)
+			if event.index == _cam_touch_index:
+				# 視点用の指が離れたら、残っている指へ引き継ぐ（持ち替えが自然になる）
+				_cam_touch_index = _touch_pts.keys()[0] if not _touch_pts.is_empty() else -1
+		if _touch_pts.size() < 2:
+			_pinch_dist = -1.0  # ピンチ終了
 		return
 	if event is InputEventScreenDrag:
-		if event.index == _cam_touch_index and not is_replay_active():
+		_touch_pts[event.index] = event.position
+		if _touch_pts.size() >= 2:
+			# ピンチ：最初の2本の指の間隔の変化率でズーム（ピンチ中は視点を回さない）。
+			# 指同士が近すぎる間(40px未満)は距離比が暴れるのでズームしない
+			var ks := _touch_pts.keys()
+			var d: float = (_touch_pts[ks[0]] as Vector2).distance_to(_touch_pts[ks[1]])
+			if _pinch_dist > 40.0 and d > 40.0 and not is_replay_active():
+				rig.pinch_zoom(d / _pinch_dist)
+			_pinch_dist = d
+		elif event.index == _cam_touch_index and not is_replay_active():
 			rig.add_aim_delta(event.relative * _stick_factor)  # 照準減速を掛ける
 		return
 	# マウス（Mac用）。タッチ端末で実タッチから合成されるエミュレートマウスだけを
