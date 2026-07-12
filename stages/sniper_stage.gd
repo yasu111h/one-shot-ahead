@@ -84,6 +84,8 @@ func _ready() -> void:
 	if mode == null:
 		mode = GameManager.create_selected_mode()
 	mode.setup(self)
+	if has_node("/root/Music"):
+		Music.play_game()   # プレイBGMへ（リトライでは鳴り直さない）
 
 
 # ---------------------------------------------------------------- サブクラスの差し替え点

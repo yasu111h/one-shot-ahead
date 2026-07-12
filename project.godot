@@ -22,6 +22,7 @@ boot_splash/minimum_display_time=0
 
 GameManager="*res://autoload/game_manager.gd"
 Settings="*res://autoload/settings.gd"
+Music="*res://autoload/music.gd"
 
 [editor_plugins]
 
