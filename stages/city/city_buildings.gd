@@ -75,7 +75,8 @@ var civil_rooms: Array[Vector3] = []   # 民間人が立つ部屋のスポーン
 var mid_walk_from := Vector3.ZERO      # 中距離ビルの広間を歩く悪人の往復点
 var mid_walk_to := Vector3.ZERO
 var side_walks: Array = []             # サイドビル広間の往復点 [{from, to}]（ワールド）
-var side_stands: Array[Vector3] = []   # サイドビルの立ち見張り（屋上・小窓）
+var side_stands: Array[Vector3] = []   # サイドビルの小窓の立ち見張り
+var roof_stands: Array[Vector3] = []   # ★屋上の見張り（B応戦で撃ち返してくる敵）
 
 var _metal: StandardMaterial3D
 var _concrete: StandardMaterial3D
@@ -260,6 +261,12 @@ func _build_target_building() -> void:
 	# ビル本体(部屋より奥の詰まった塊)
 	_box(Vector3(X_MAX - X_MIN, Y_MAX - Y_MIN, BAND_Z1 - MASS_Z1),
 		Vector3(0.0, (Y_MIN + Y_MAX) * 0.5, (BAND_Z1 + MASS_Z1) * 0.5), mat, true)
+
+	# 屋上のパラペット（見張りの土台・シルエットが夜空に浮く）＋屋上の見張り2体。
+	# 正面のZは本体の手前面(FACADE_Z)に合わせ、遮蔽なしで撃ち合える
+	_box(Vector3(X_MAX - X_MIN, 0.9, 1.0), Vector3(0.0, Y_MAX + 0.45, FACADE_Z - 0.5), _concrete, true)
+	roof_stands.append(Vector3(-8.0, Y_MAX + 0.95, FACADE_Z - 1.6))
+	roof_stands.append(Vector3(9.0, Y_MAX + 0.95, FACADE_Z - 1.6))
 
 	for i in ROOMS.size():
 		_build_room(ROOMS[i][0], ROOMS[i][1], band_zc, band_d)
@@ -496,13 +503,13 @@ func _in_corridor(x: float, z: float, pad := 0.0) -> bool:
 ##   小窓: 見張りの悪人が立つ／広間の窓際に民間人（誤射禁止の緊張は維持）
 ##   屋上: 見張りが立つ（遮蔽なしのご褒美標的。夜空を背にシルエットが浮かぶ）
 func _build_side_buildings() -> void:
-	# 右手（プレイヤーから約115m・yaw≈-54°）
-	_build_side_building(Vector3(100.0, 0.0, -30.0), 71.0, true)
-	# 左手（約135m・yaw≈+49°）
-	_build_side_building(Vector3(-95.0, 0.0, -55.0), 83.0, false)
+	# 右手（プレイヤーから約115m・yaw≈-54°）／左手（約135m・yaw≈+49°）。
+	# どちらも屋上に見張り（B応戦で撃ち返してくる敵になる）
+	_build_side_building(Vector3(100.0, 0.0, -30.0), 71.0)
+	_build_side_building(Vector3(-95.0, 0.0, -55.0), 83.0)
 
 
-func _build_side_building(origin: Vector3, seed_v: float, roof_guard: bool) -> void:
+func _build_side_building(origin: Vector3, seed_v: float) -> void:
 	var hw := 9.0        # 半幅
 	var h := 34.0        # 高さ
 	var depth := 16.0
@@ -557,8 +564,7 @@ func _build_side_building(origin: Vector3, seed_v: float, roof_guard: bool) -> v
 	# 屋上の見張り（正面寄り・遮蔽なし）＋屋上の縁と塔屋（シルエットの土台）
 	_box_in(root, Vector3(hw * 2.0 + 0.4, 0.9, 0.7), Vector3(0.0, h + 0.45, fz - 0.35), _concrete, true)
 	_box_in(root, Vector3(2.2, 2.2, 2.2), Vector3(-hw + 2.6, h + 1.1, -2.0), _concrete, true)
-	if roof_guard:
-		side_stands.append(root.to_global(Vector3(2.0, h + 0.95, fz - 1.6)))
+	roof_stands.append(root.to_global(Vector3(2.0, h + 0.95, fz - 1.6)))
 
 	# 屋上の赤い航空障害灯（遠目でもビルの存在が読める）
 	var beacon := OmniLight3D.new()

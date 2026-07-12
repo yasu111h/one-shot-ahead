@@ -28,6 +28,9 @@ static var _anim_cache: Dictionary = {}
 
 var hostile := true   # false＝民間人（誤射禁止）
 var alive := true
+## 撃ち返してくる敵か（B応戦モードで屋上の見張りだけ true にする）。
+## true にすると銃を構えたモデルになり、HUDの▼マーカーが警告色（オレンジ）になる
+var shoots_back := false
 var use_model := true           # falseで従来のカプセル見た目に(特殊な置き場所用)
 var predict_radius := 0.8       # 着弾予測用の包含球半径
 var velocity_estimate := Vector3.ZERO  # 偏差予測用の推定速度
@@ -136,6 +139,61 @@ func _build_model() -> void:
 			_ap.play("Idle")
 			# 個体ごとに再生位置をずらす(全員が同じ拍で揺れる「量産感」を消す)
 			_ap.seek(randf() * idle.length, true)
+
+	# 悪人は銃を携える（民間人は丸腰）。撃ち手は「両手で構える」姿勢、
+	# それ以外は右手にぶら下げる（同じ銃モデルを姿勢だけ変えて使う）
+	if hostile:
+		_build_enemy_gun(skel, s)
+
+
+## 敵の銃。右手ボーン（RightHand）に軽量なライフルを装着する。
+## shoots_back（撃ち手）は銃身を前へ＝構え姿、それ以外は下げて携行する。
+## BoneAttachment3D はスケール済みキャラの子＝スケールが二重に掛かるので、
+## 銃側で 1/char_scale して実寸を保つ
+func _build_enemy_gun(skel: Skeleton3D, char_scale: float) -> void:
+	var hand := skel.find_bone("RightHand")
+	if hand == -1:
+		return
+	var attach := BoneAttachment3D.new()
+	attach.name = "EnemyGunAttach"   # 固有名（検証で識別しやすく）
+	attach.bone_name = "RightHand"
+	skel.add_child(attach)
+	var gun := _make_enemy_rifle()
+	gun.scale = Vector3.ONE / maxf(char_scale, 0.001)
+	if shoots_back:
+		# 構え：銃身を体の正面(-Z)へ。右手の少し前に受けが来る
+		gun.position = Vector3(-0.02, 0.0, 0.10)
+		gun.rotation_degrees = Vector3(-8.0, 0.0, 0.0)
+	else:
+		# 携行：銃口を斜め下へ下げて持つ
+		gun.position = Vector3(0.0, -0.02, 0.04)
+		gun.rotation_degrees = Vector3(55.0, 0.0, 0.0)
+	attach.add_child(gun)
+
+
+## 敵用の簡素なライフル（箱数個・バレルはローカル-Z方向＝構えで正面を向く）
+func _make_enemy_rifle() -> Node3D:
+	var root := Node3D.new()
+	var metal := StandardMaterial3D.new()
+	metal.albedo_color = Color(0.09, 0.09, 0.11)
+	metal.metallic = 0.7
+	metal.roughness = 0.5
+	# 受け・銃身・ストック・マガジン（-Zが前）
+	for spec in [
+		[Vector3(0.05, 0.08, 0.26), Vector3(0.0, 0.0, -0.02)],   # 受け
+		[Vector3(0.03, 0.03, 0.34), Vector3(0.0, 0.012, -0.26)], # 銃身
+		[Vector3(0.045, 0.06, 0.14), Vector3(0.0, -0.01, 0.14)], # ストック
+		[Vector3(0.03, 0.11, 0.05), Vector3(0.0, -0.09, -0.06)], # マガジン
+	]:
+		var mi := MeshInstance3D.new()
+		var bm := BoxMesh.new()
+		bm.size = spec[0]
+		mi.mesh = bm
+		mi.position = spec[1]
+		mi.material_override = metal
+		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		root.add_child(mi)
+	return root
 
 
 ## ベイク済みアニメの共有キャッシュ。初回だけFBXを実体化してベイクする

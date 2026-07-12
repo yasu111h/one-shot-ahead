@@ -35,10 +35,11 @@ func setup(stage_ref: SniperStage) -> void:
 	# 被弾フィードバック（赤ビネット＋全画面フラッシュ）を画面へ
 	_damage_flash = DamageFlash.new()
 	stage.add_child(_damage_flash)
-	# 悪人1体ごとに撃ち返し行動を付与する。既に動く敵（歩行）は遮蔽を作らず、
-	# 静止している敵にはカバー壁＋顔出しサイクルを与える
+	# 撃ち返してくるのは「ビルの上に立つ見張り」だけ（shoots_back=true）。
+	# 窓の中や隙間を動く悪人は撃ってこない＝屋上の敵とだけ撃ち合う（2026-07-12ユーザー指示）。
+	# 静止見張りにはカバー壁＋顔出しサイクル、動く見張りは見えている間だけ撃つ
 	for t in stage.hostiles:
-		if not (t is TargetHuman):
+		if not (t is TargetHuman) or not t.shoots_back:
 			continue
 		var sh := EnemyShooter.new()
 		sh.stage = stage

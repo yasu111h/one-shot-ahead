@@ -696,7 +696,8 @@ class DynamicReticle:
 class TargetMarkers:
 	extends Control
 
-	const COL := Color(1.0, 0.30, 0.22, 0.95)
+	const COL := Color(1.0, 0.30, 0.22, 0.95)          # 通常の悪人（赤）
+	const COL_SHOOTER := Color(1.0, 0.62, 0.10, 0.98)  # 撃ち返してくる敵（オレンジ＝警告）
 	const COL_OUTLINE := Color(0.0, 0.0, 0.0, 0.8)
 	const MARKER_HEIGHT := 2.2   # 標的原点からマーカーまでの高さ(m)
 
@@ -730,5 +731,7 @@ class TargetMarkers:
 				sp + Vector2(-8, -14), sp + Vector2(8, -14), sp + Vector2(0, -2)])
 			var tri_o := PackedVector2Array([
 				sp + Vector2(-10, -16), sp + Vector2(10, -16), sp + Vector2(0, 1)])
+			# 撃ち返してくる敵（屋上の見張り）はオレンジの警告色で区別する
+			var base := COL_SHOOTER if (t.get("shoots_back") == true) else COL
 			draw_colored_polygon(tri_o, Color(COL_OUTLINE.r, COL_OUTLINE.g, COL_OUTLINE.b, COL_OUTLINE.a * a))
-			draw_colored_polygon(tri, Color(COL.r, COL.g, COL.b, COL.a * a))
+			draw_colored_polygon(tri, Color(base.r, base.g, base.b, base.a * a))
