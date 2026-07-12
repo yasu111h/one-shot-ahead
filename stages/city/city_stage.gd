@@ -1,12 +1,18 @@
 extends SniperStage
-## 「夜のビル街」ステージ（企画の柱）。
-## プレイヤーは手前のビルの屋上に陣取り、約200m先の雑居ビルの灯った3部屋を狙う。
-## 各部屋では悪人が動き回り、そばに民間人がいる。悪人だけを撃ち抜く＝誤射で即失敗。
+## 「夜のビル街」ステージ（企画の柱・2026-07-12改修）。
+## プレイヤーは手前のビルの屋上に陣取り、悪人が潜む5つの棟＋走る車を狙い分ける:
+##   棟1(約200m) 雑居ビル: 灯った3部屋の歩く悪人＋小窓の見張り。民間人が隣にいる
+##   棟2(約370m) 中距離ビル: 広間の悪人(隣に民間人)＋見張り＋民間人だけの部屋
+##   棟3(約480m)・棟4(約660m) 狙撃塔: 小窓の見張り
+##   棟5(約880m) 超高層タワー最上部: 超遠距離の見せ場(高倍率スコープ+▼マーカー+測距)
+##   クロス通りのVIP車: 信号待ちで停車した数秒だけスモークガラスが下がり頭が覗く
+## 悪人だけを撃ち抜く＝民間人の誤射で即失敗。
 ## 窓の開口は部屋より狭いので、悪人が「窓に現れた一瞬」だけが撃てる窓（＝本作のコア）。
 
 const CIVILIAN_ROOMS := [0, 1]   # 民間人がいる部屋（最上階の見張りは単独）
 
 var city: CityBuildings
+var traffic: CityTraffic
 
 
 func _rig_position() -> Vector3:
@@ -16,11 +22,11 @@ func _rig_position() -> Vector3:
 
 func _configure_rig() -> void:
 	# 角から見渡せる範囲だけに視点を制限する。
-	# 前方（-Z＝標的ビル）を中心に、左は通りの谷間まで(+50°)、
-	# 右は大きく振り向けるように-110°まで(右側の街並み・標的ビル群を見渡せる)。
+	# 前方（-Z＝標的ビル）を中心に、左はクロス通りを進入してくるVIP車を
+	# 追えるところまで(+62°)、右は大きく振り向けるように-110°まで。
 	# 真後ろ（自分の屋上側）だけは向けない
-	# 上は屋上より高い階の窓・上層の塔まで見上げられるように+38°
-	rig.set_view_limits(-110.0, 50.0, -35.0, 38.0)
+	# 上は屋上より高い階の窓・超高層タワーの最上部まで見上げられるように+38°
+	rig.set_view_limits(-110.0, 62.0, -35.0, 38.0)
 
 
 func _mission_text() -> String:
@@ -74,6 +80,8 @@ func _build_environment() -> void:
 func _build_world() -> void:
 	city = CityBuildings.new()
 	add_child(city)
+	traffic = CityTraffic.new()
+	add_child(traffic)
 
 
 ## 夜の街なのでビル風は穏やか（±3m/s）
@@ -98,8 +106,22 @@ func _spawn_targets() -> void:
 		if i in CIVILIAN_ROOMS:
 			_add_standing(Vector3(cx + 1.9, y, -161.8), false)
 
-	# 小窓の部屋(標的ビルの小さいガラス3つ＋数百m先の狙撃塔2つ)：
+	# 小窓の部屋(棟1の小窓＋棟2の見張り＋狙撃塔480/660m＋超高層880m)：
 	# 悪人が窓辺に立って外を見張っている。ガラスは小さいまま=見えるのは上半身だけ
 	for p in city.small_rooms:
 		var man := _add_standing(p, true)
 		man.rotation.y = PI   # 窓の外(プレイヤー側)を向く
+
+	# 棟2(中距離ビル)の広間: 悪人が往復し、窓の右端に民間人が立ちすくむ
+	_add_walker(city.mid_walk_from, city.mid_walk_to, 1.1)
+
+	# 民間人だけの部屋(棟2の広間の窓際＋上階の「はずれ部屋」)。撃てば即失敗
+	for p in city.civil_rooms:
+		_add_standing(p, false)
+
+	# VIP車の標的: 信号待ちで停車し窓が開いた数秒だけ頭が覗く
+	var vip := TargetHuman.new()
+	vip.hostile = true
+	add_child(vip)
+	traffic.seat_vip(vip)
+	_register(vip)

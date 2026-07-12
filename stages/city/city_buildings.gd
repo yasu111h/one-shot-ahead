@@ -46,21 +46,34 @@ const CELL_X1 := 0.86
 const CELL_Y0 := 0.24
 const CELL_Y1 := 0.80
 
-## 標的ビル正面の小窓部屋(窓グリッドのセル座標 [cu, cv])。大部屋と重ならない位置
+## 標的ビル正面の小窓部屋(窓グリッドのセル座標 [cu, cv])。大部屋と重ならない位置。
+## 改修(2026-07-12): 標的の1棟集中をやめ4棟へ分散したため、このビルの小窓は1つに減量
 const SMALL_ROOM_CELLS := [
-	[-10, 2],   # 左下(x≈-16, y≈8)
 	[4, 12],    # 右上(x≈8, y≈40)
-	[9, 6],     # 右中(x≈16, y≈21)
 ]
 
 ## 遠距離の狙撃塔 [中心x, 手前面z, 高さ, 部屋のセルv]。数百m先の小窓に標的が立つ。
-## xは標的ビル(±20m)の脇を射線が抜けられる位置に置く(レイキャストで検証済み)
+## xは標的ビル(±20m)の脇を射線が抜けられる位置に置く(レイキャストで検証済み)。
+## 3本目は約880m先の超高層ペンシルタワー(超遠距離の見せ場)。
+## メインビルの屋上(y=48)越しに最上部の部屋(y≈113)を狙う
 const FAR_TOWERS := [
 	[-75.0, -430.0, 70.0, 11],   # 約480m先・左手(標的ビルの左脇を抜く)
 	[60.0, -620.0, 90.0, 17],    # 約660m先・右手(標的ビルの右脇を抜く)
+	[-8.0, -840.0, 125.0, 35],   # 約880m先・正面奥(標的ビルの屋上越し)
 ]
 
+# --- 中距離ビル(棟2・約370m先の左手) ---
+const MID_X := -48.0             # 中心x
+const MID_HW := 10.0             # 半幅
+const MID_FACADE_Z := -330.0     # 正面の壁の外面z
+const MID_H := 46.0              # 高さ
+const MID_BAND_D := 3.0          # 部屋の帯の奥行き
+const MID_DEPTH := 16.0          # ビル全体の奥行き
+
 var small_rooms: Array[Vector3] = []   # 小窓部屋の標的スポーン点(ワールド。ステージが読む)
+var civil_rooms: Array[Vector3] = []   # 民間人が立つ部屋のスポーン点(撃てば即FAIL)
+var mid_walk_from := Vector3.ZERO      # 中距離ビルの広間を歩く悪人の往復点
+var mid_walk_to := Vector3.ZERO
 
 var _metal: StandardMaterial3D
 var _concrete: StandardMaterial3D
@@ -75,6 +88,7 @@ func _ready() -> void:
 	_build_ground()
 	_build_player_building()
 	_build_target_building()
+	_build_mid_building()
 	_build_far_towers()
 	_build_towers()
 	_build_street_glow()
@@ -280,7 +294,9 @@ func _uniq_sorted(v: Array[float]) -> Array[float]:
 ## 小窓部屋: 装飾窓1マスぶんの開口の裏にある小さな空間。
 ## 内装(暖色)・灯り・小さなガラス・立ち標的のスポーン点を作る。
 ## rect=開口(壁面座標)、facade_z=正面壁の外面z、band_z0/band_z1=空洞の手前/奥
-func _build_small_room(rect: Rect2, facade_z: float, band_z0: float, band_z1: float) -> void:
+## spawn_kind: "hostile"=悪人スポーン点 / "civilian"=民間人 / "none"=スポーンなし(呼び出し側が置く)
+func _build_small_room(rect: Rect2, facade_z: float, band_z0: float, band_z1: float,
+		spawn_kind := "hostile") -> void:
 	var cx := rect.position.x + rect.size.x * 0.5
 	var fy := rect.position.y            # 開口の下端=部屋の床
 	var w := rect.size.x
@@ -310,7 +326,61 @@ func _build_small_room(rect: Rect2, facade_z: float, band_z0: float, band_z1: fl
 	pane.position = Vector3(cx, fy + h * 0.5, (facade_z + band_z0) * 0.5)
 
 	# 立ち標的のスポーン点(胴体中心)。部屋の中央やや窓寄り
-	small_rooms.append(Vector3(cx, fy + 0.95, zc + 0.3))
+	match spawn_kind:
+		"hostile":
+			small_rooms.append(Vector3(cx, fy + 0.95, zc + 0.3))
+		"civilian":
+			civil_rooms.append(Vector3(cx, fy + 0.95, zc + 0.3))
+		_:
+			pass
+
+
+## 中距離ビル(棟2・約370m先の左手)。灯った部屋が3つ:
+##   広間(y18): 悪人が歩き回り、窓際に民間人が立つ＝誤射禁止の緊張
+##   小部屋(y30): 見張りの悪人が窓辺に立つ
+##   小部屋(y38): 民間人だけが灯りの中にいる「はずれ部屋」(撃てば即FAIL)
+func _build_mid_building() -> void:
+	var mat := _win_mat(57.0, 0.28, 0.22)
+	var facade_t := 0.7
+	var band_z0 := MID_FACADE_Z - facade_t
+	var band_z1 := band_z0 - MID_BAND_D
+	var x0 := MID_X - MID_HW
+	var x1 := MID_X + MID_HW
+
+	# 部屋の開口。広間は横長(窓幅2.6m)＝部屋(4.8m)より狭い。歩く悪人が現れる一瞬を作る
+	var hall := Rect2(MID_X - 1.3, 18.0 + 0.35, 2.6, 2.45)
+	var watch := Rect2(MID_X + 3.4, 30.0 + 0.3, 1.3, 1.9)
+	var decoy := Rect2(MID_X - 5.2, 38.0 + 0.3, 1.3, 1.9)
+	var holes: Array[Rect2] = [hall, watch, decoy]
+
+	# 正面の壁(開口だけ穴)→空洞の帯→本体
+	_grid_fill(MID_FACADE_Z - facade_t * 0.5, facade_t, holes, mat, x0, x1, 0.0, MID_H)
+	_grid_fill((band_z0 + band_z1) * 0.5, MID_BAND_D, holes, mat, x0, x1, 0.0, MID_H)
+	_box(Vector3(MID_HW * 2.0, MID_H, MID_DEPTH - facade_t - MID_BAND_D),
+		Vector3(MID_X, MID_H * 0.5, band_z1 - (MID_DEPTH - facade_t - MID_BAND_D) * 0.5), mat, true)
+
+	# 広間: 部屋そのものは開口より広い(内寸4.8m)。悪人はこの中を往復し、
+	# 窓(2.6m)に現れた一瞬だけ撃てる。民間人は窓の右端に立ちすくむ
+	var hall_room := Rect2(MID_X - 2.4, 18.0 + 0.35, 4.8, 2.45)
+	_build_small_room(hall_room, MID_FACADE_Z, band_z0, band_z1, "none")
+	var hall_y := 18.0 + 0.35 + 0.95
+	var hall_z := (band_z0 + band_z1) * 0.5
+	mid_walk_from = Vector3(MID_X - 1.9, hall_y, hall_z)
+	mid_walk_to = Vector3(MID_X + 1.9, hall_y, hall_z)
+	civil_rooms.append(Vector3(MID_X + 1.15, hall_y, hall_z + 0.55))
+
+	# 見張りの小部屋(悪人)と、民間人だけの「はずれ部屋」
+	_build_small_room(watch, MID_FACADE_Z, band_z0, band_z1, "hostile")
+	_build_small_room(decoy, MID_FACADE_Z, band_z0, band_z1, "civilian")
+
+	# 屋上の赤い航空障害灯(遠目にもビルの存在が読める)
+	var beacon := OmniLight3D.new()
+	beacon.light_color = Color(1.0, 0.2, 0.15)
+	beacon.light_energy = 0.7
+	beacon.omni_range = 8.0
+	beacon.shadow_enabled = false
+	beacon.position = Vector3(MID_X, MID_H + 1.2, MID_FACADE_Z - 6.0)
+	add_child(beacon)
 
 
 ## 遠距離の狙撃塔。正面(+Z側)に小窓部屋が1つだけ灯る高層タワー
@@ -377,9 +447,21 @@ func _build_room(cx: float, fy: float, zc: float, zd: float) -> void:
 
 # ---------------------------------------------------------------- 周囲の街
 
-## プレイヤーと標的を結ぶ射線の回廊は空ける（ここに建てると狙撃できない）
+## プレイヤーと標的を結ぶ射線・道路の回廊は空ける（ここに建てると狙撃/走行できない）。
+## [x_min, x_max, z_min, z_max]
+## ランダムビルはz≧-240にしか湧かないが、超遠距離タワーの射線も念のため深くまで守る
+const CLEAR_LANES := [
+	[-34.0, 34.0, -900.0, 72.0],     # メイン通り＋中央射線(超遠距離タワーまで)
+	[-80.0, -20.0, -440.0, -180.0],  # 左手の射線(中距離ビル370m・狙撃塔480m)
+	[20.0, 70.0, -250.0, -180.0],    # 右手の射線(狙撃塔660mへの抜け)
+	[-210.0, 210.0, -129.0, -111.0], # クロス通り(信号待ちのVIP車が走る)
+]
+
 func _in_corridor(x: float, z: float, pad := 0.0) -> bool:
-	return absf(x) < 34.0 + pad and z < 72.0 + pad and z > -200.0 - pad
+	for l in CLEAR_LANES:
+		if x > l[0] - pad and x < l[1] + pad and z > l[2] - pad and z < l[3] + pad:
+			return true
+	return false
 
 
 ## 周囲のタワー群。高さも点灯パターンもばらして「街」に見せる
@@ -413,9 +495,14 @@ func _build_towers() -> void:
 		var bz := sin(ang) * r
 		var bw := rng.randf_range(34.0, 60.0)
 		var bh := rng.randf_range(10.0, 30.0)
+		var dpt := rng.randf_range(20.0, 34.0)
+		# 射線・道路の保護レーンに掛かる遠景ビルは建てない
+		# (中距離ビル370m・狙撃塔480/660m・超遠距離880mへの射線を確実に通す)
+		if _in_corridor(bx, bz, bw * 0.5):
+			continue
 		var m := _win_mat(100.0 + float(i) * 3.7, 0.24, 0.25)
 		# こちらも当たり判定あり（遠景でも撃てば手前の壁で止まる）
-		_box(Vector3(bw, bh, rng.randf_range(20.0, 34.0)), Vector3(bx, bh * 0.5, bz), m, true)
+		_box(Vector3(bw, bh, dpt), Vector3(bx, bh * 0.5, bz), m, true)
 
 	# 最も高い塔たちに赤い航空障害灯(ゆっくり明滅)
 	var blink := Shader.new()
