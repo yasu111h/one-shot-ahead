@@ -14,9 +14,10 @@ const TrainLineScript := preload("res://stages/train/train_line.gd")
 
 const PLAYER_SPEED := 25.0     # 自分の列車(m/s ≒ 90km/h・-Z方向)
 const ENEMY_SPEED := -22.0     # 標的の列車(m/s ≒ 80km/h・対向=+Z方向)。相対47m/s=170km/h
-const ENEMY_START_Z := -150.0  # 標的列車の初期位置(前方)。ここから対向で近づいてくる
+const ENEMY_START_Z := -420.0  # 標的列車の初期位置(前方遠く)。開始時は横に列車がなく、
+                               # 約5秒後に対向で近づいて横をすれ違う
 const LOOP_BACK := 130.0       # 標的がこれだけ後方へ抜けたら次の周回へ
-const LOOP_AHEAD := 270.0      # 次の周回の出現位置(リグの前方この距離)
+const LOOP_AHEAD := 470.0      # 次の周回の出現位置(リグの前方この距離)。すれ違い間隔≒10秒
 const PLAYER_TRACK_X := 6.0    # 自分の線路の中心x
 const ENEMY_TRACK_X := -6.0    # 標的の線路の中心x
 var rig_y: float = TrainLineScript.ROOF_Y + 1.9   # 屋根の上に立つ目線
