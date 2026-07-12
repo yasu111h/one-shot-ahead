@@ -205,6 +205,16 @@ func _build_player_building() -> void:
 
 # ---------------------------------------------------------------- 標的のビル
 
+## 部屋の「空洞」Rect。開口(窓)より狭い空間に人型(横倒し1.5m)が収まらないと、
+## 倒れた死体が周囲の詰まった箱にめり込み、押し出されて空中に静止する
+## （「死体が宙に浮く」バグの原因）。開口はそのまま、裏の空洞だけ横へ広げる
+static func room_cavity(rect: Rect2, min_w := 2.2) -> Rect2:
+	if rect.size.x >= min_w:
+		return rect
+	var grow := (min_w - rect.size.x) * 0.5
+	return Rect2(rect.position.x - grow, rect.position.y, min_w, rect.size.y)
+
+
 ## 窓グリッドのセル[cu, cv]の「窓ガラス部分」のRect(シェーダの描く窓と正確に一致する)
 static func cell_rect(cu: int, cv: int) -> Rect2:
 	return Rect2(
@@ -237,7 +247,8 @@ func _build_target_building() -> void:
 	var rooms: Array[Rect2] = []
 	for r in ROOMS:
 		rooms.append(Rect2(r[0] - ROOM_W * 0.5, r[1], ROOM_W, ROOM_H))
-	rooms.append_array(small_rects)   # 小窓部屋の空洞も帯に空ける
+	for r in small_rects:
+		rooms.append(room_cavity(r))   # 小窓部屋の空洞（開口より広い）も帯に空ける
 	var band_zc := (BAND_Z0 + BAND_Z1) * 0.5
 	var band_d := BAND_Z0 - BAND_Z1
 	_grid_fill(band_zc, band_d, rooms, mat)
@@ -306,13 +317,17 @@ func _build_small_room(rect: Rect2, facade_z: float, band_z0: float, band_z1: fl
 	var h := rect.size.y
 	var zc := (band_z0 + band_z1) * 0.5
 	var zd := band_z0 - band_z1
+	# 内装は「空洞」サイズで作る（開口より広い＝倒れた死体が横たわれる）
+	var cav := room_cavity(rect)
+	var cav_cx := cav.position.x + cav.size.x * 0.5
+	var cw := cav.size.x
 
 	# 内装(床・天井・左右・奥)。薄い暖色パネル
-	_box(Vector3(w, 0.1, zd), Vector3(cx, fy + 0.05, zc), _warm_wall, true)
-	_box(Vector3(w, 0.1, zd), Vector3(cx, fy + h - 0.05, zc), _warm_wall, false)
+	_box(Vector3(cw, 0.1, zd), Vector3(cav_cx, fy + 0.05, zc), _warm_wall, true)
+	_box(Vector3(cw, 0.1, zd), Vector3(cav_cx, fy + h - 0.05, zc), _warm_wall, false)
 	for sx in [-1.0, 1.0]:
-		_box(Vector3(0.1, h, zd), Vector3(cx + sx * (w * 0.5 - 0.05), fy + h * 0.5, zc), _warm_wall, false)
-	_box(Vector3(w, h, 0.1), Vector3(cx, fy + h * 0.5, band_z1 + 0.05), _warm_wall, true)
+		_box(Vector3(0.1, h, zd), Vector3(cav_cx + sx * (cw * 0.5 - 0.05), fy + h * 0.5, zc), _warm_wall, false)
+	_box(Vector3(cw, h, 0.1), Vector3(cav_cx, fy + h * 0.5, band_z1 + 0.05), _warm_wall, true)
 
 	# 灯り(小さい部屋なので控えめ。夜景の中で「そこに誰かいる」と分かる)
 	var light := OmniLight3D.new()
@@ -356,9 +371,13 @@ func _build_mid_building() -> void:
 	var decoy := Rect2(MID_X - 5.2, 38.0 + 0.3, 1.3, 1.9)
 	var holes: Array[Rect2] = [hall, watch, decoy]
 
-	# 正面の壁(開口だけ穴)→空洞の帯→本体
+	# 正面の壁は「開口」だけ穴。帯は「部屋の空洞」で穴を空ける
+	# （開口幅のまま帯を掘ると、部屋を歩く悪人が詰まった箱の中を歩き、
+	#   倒れた死体が壁に押し出されて宙に浮く）
+	var hall_cav := Rect2(MID_X - 2.4, 18.0 + 0.35, 4.8, 2.45)
+	var band_holes: Array[Rect2] = [hall_cav, room_cavity(watch), room_cavity(decoy)]
 	_grid_fill(MID_FACADE_Z - facade_t * 0.5, facade_t, holes, mat, x0, x1, 0.0, MID_H)
-	_grid_fill((band_z0 + band_z1) * 0.5, MID_BAND_D, holes, mat, x0, x1, 0.0, MID_H)
+	_grid_fill((band_z0 + band_z1) * 0.5, MID_BAND_D, band_holes, mat, x0, x1, 0.0, MID_H)
 	_box(Vector3(MID_HW * 2.0, MID_H, MID_DEPTH - facade_t - MID_BAND_D),
 		Vector3(MID_X, MID_H * 0.5, band_z1 - (MID_DEPTH - facade_t - MID_BAND_D) * 0.5), mat, true)
 
@@ -404,10 +423,10 @@ func _build_far_towers() -> void:
 		var cu := roundi(cx / WIN_W - 0.5)
 		var rect := cell_rect(cu, cv)
 
-		# 正面の壁(開口だけ穴)→空洞の帯(開口の空間だけ穴)→本体
-		var holes: Array[Rect2] = [rect]
-		_grid_fill(fz - facade_t * 0.5, facade_t, holes, mat, cx - hw, cx + hw, 0.0, h)
-		_grid_fill(fz - facade_t - band_d * 0.5, band_d, holes, mat, cx - hw, cx + hw, 0.0, h)
+		# 正面の壁(開口だけ穴)→空洞の帯(部屋の空洞＝開口より広く掘る)→本体
+		_grid_fill(fz - facade_t * 0.5, facade_t, [rect] as Array[Rect2], mat, cx - hw, cx + hw, 0.0, h)
+		_grid_fill(fz - facade_t - band_d * 0.5, band_d, [room_cavity(rect)] as Array[Rect2],
+			mat, cx - hw, cx + hw, 0.0, h)
 		_box(Vector3(hw * 2.0, h, depth - facade_t - band_d),
 			Vector3(cx, h * 0.5, fz - facade_t - band_d - (depth - facade_t - band_d) * 0.5), mat, true)
 
@@ -504,22 +523,24 @@ func _build_side_building(origin: Vector3, seed_v: float, roof_guard: bool) -> v
 	# 開口（正面壁ローカルXY・下端y）。広間=横長／小窓=見張り
 	var hall := Rect2(-1.4, 20.35, 2.8, 2.3)
 	var watch := Rect2(3.6, 26.3, 1.2, 1.8)
-	var holes: Array[Rect2] = [hall, watch]
+	var holes: Array[Rect2] = [hall, watch]   # 正面壁の穴＝開口
+	# 帯の穴＝部屋の空洞（開口より広く掘る。狭いと死体が壁に載って宙に浮く）
+	var hall_room := Rect2(-2.8, hall.position.y, 5.6, hall.size.y)
+	var band_holes: Array[Rect2] = [hall_room, room_cavity(watch)]
 
 	# 正面の壁（開口だけ穴）→部屋の帯→本体
 	var fz := depth * 0.5                 # 正面の外面（ローカル+Z）
 	var band_z0 := fz - ft                # 部屋の帯（手前/奥）
 	var band_z1 := band_z0 - bd
 	_grid_fill_in(root, fz - ft * 0.5, ft, holes, mat, -hw, hw, 0.0, h)
-	_grid_fill_in(root, (band_z0 + band_z1) * 0.5, bd, holes, mat, -hw, hw, 0.0, h)
+	_grid_fill_in(root, (band_z0 + band_z1) * 0.5, bd, band_holes, mat, -hw, hw, 0.0, h)
 	# 本体（部屋の帯より奥〜背面までの詰まった塊）
 	_box_in(root, Vector3(hw * 2.0, h, band_z1 + depth * 0.5),
 		Vector3(0.0, h * 0.5, (band_z1 - depth * 0.5) * 0.5), mat, true)
 
 	# 広間（内寸5.6m＝開口2.8mより広い）：内装・灯り・ガラス・往復点
 	var zc := (band_z0 + band_z1) * 0.5
-	var room := Rect2(-2.8, hall.position.y, 5.6, hall.size.y)
-	_side_room_in(root, room, fz, band_z0, band_z1)
+	_side_room_in(root, hall_room, fz, band_z0, band_z1)
 	var wy := hall.position.y + 0.95
 	side_walks.append({
 		"from": root.to_global(Vector3(-2.3, wy, zc)),
@@ -599,10 +620,12 @@ func _grid_fill_in(parent: Node, z_center: float, z_depth: float, holes: Array[R
 
 ## _build_small_room のローカル版（rootの中に内装・灯り・ガラスを組む）
 func _side_room_in(root: Node3D, rect: Rect2, fz: float, band_z0: float, band_z1: float) -> void:
-	var cx := rect.position.x + rect.size.x * 0.5
-	var fy := rect.position.y
-	var w := rect.size.x
-	var h := rect.size.y
+	# 内装は「空洞」サイズで作る（開口より広い＝倒れた死体が横たわれる）
+	var cav := room_cavity(rect)
+	var cx := cav.position.x + cav.size.x * 0.5
+	var fy := cav.position.y
+	var w := cav.size.x
+	var h := cav.size.y
 	var zc := (band_z0 + band_z1) * 0.5
 	var zd := band_z0 - band_z1
 	_box_in(root, Vector3(w, 0.1, zd), Vector3(cx, fy + 0.05, zc), _warm_wall, true)
