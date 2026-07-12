@@ -7,7 +7,10 @@ extends Node3D
 signal zoom_changed(stage: int)
 
 const BASE_FOV := 75.0                          # 肉眼FOV
-const SCOPE_FOVS: Array[float] = [18.75, 9.375] # 4x / 8x（75/倍率）
+const STAGE_MAGS: Array[float] = [1.0, 4.0, 8.0]  # Q/SCOPEボタン巡回のプリセット倍率
+const MAG_MIN := 1.0    # ピンチの最小倍率(肉眼)
+const MAG_MAX := 8.0    # ピンチの最大倍率
+const SCOPE_ON_MAG := 1.05  # この倍率を超えたら「スコープを覗いている」扱い
 const AIM_BLEND_SPEED := 6.0 # スコープ遷移速度（TABIJI準拠 6.0/s）
 
 @export var base_sens := 0.005          # 視点感度(rad/px)。FOV比例で自動微調整
@@ -18,7 +21,8 @@ const AIM_BLEND_SPEED := 6.0 # スコープ遷移速度（TABIJI準拠 6.0/s）
 @export var recoil_scoped_mult := 0.55  # スコープ中のリコイル倍率
 
 var camera: Camera3D
-var zoom_stage := 0          # 0=肉眼 1=4x 2=8x
+var zoom_stage := 0          # 0=肉眼 1=スコープ(低倍) 2=スコープ(高倍)。表示・巡回用
+var magnification := 1.0     # 連続倍率(1〜8)。ピンチで連続変化・Q/ホイールはプリセットへ
 var aim_blend := 0.0         # 肉眼0⇄スコープ1のなめらかな遷移値
 
 # 視点の可動範囲（rad）。ステージが set_view_limits で狙撃地点に合わせて絞る。
@@ -31,7 +35,7 @@ var pitch_max := deg_to_rad(25.0)
 var _pitch_node: Node3D
 var _yaw := 0.0
 var _pitch := 0.0
-var _scope_fov: float = SCOPE_FOVS[0]  # スコープ側の現在FOV（4x⇄8x切替もなめらかに）
+var _scope_fov: float = BASE_FOV / STAGE_MAGS[1]  # スコープ側の現在FOV（倍率変化もなめらかに）
 var _recoil := 0.0
 
 
@@ -97,10 +101,24 @@ func step_zoom(dir: int) -> void:
 
 
 func set_zoom_stage(stage: int) -> void:
-	if stage == zoom_stage:
+	if stage == zoom_stage and is_equal_approx(magnification, STAGE_MAGS[stage]):
 		return
 	zoom_stage = stage
+	magnification = STAGE_MAGS[stage]  # プリセット倍率へスナップ
 	zoom_changed.emit(stage)
+
+
+## 2本指ピンチによる連続ズーム。ratio=指の間隔の変化率(>1で拡大)。
+## 倍率1〜8で連続変化し、1を超えたらスコープを覗く（マスク・感度・HUDは倍率に追従）
+func pinch_zoom(ratio: float) -> void:
+	magnification = clampf(magnification * ratio, MAG_MIN, MAG_MAX)
+	# 表示・巡回用の段階を倍率から導出（1x台=肉眼 / 〜6x=低倍 / それ以上=高倍）
+	var stage := 0
+	if magnification > SCOPE_ON_MAG:
+		stage = 1 if magnification < 6.0 else 2
+	if stage != zoom_stage:
+		zoom_stage = stage
+		zoom_changed.emit(stage)
 
 
 ## 発射時の反動キック（TABIJI準拠：ピッチ跳ね＋左右微ぶれ）
@@ -111,9 +129,11 @@ func kick() -> void:
 
 
 func _process(delta: float) -> void:
-	# スコープ遷移（_aim_blend方式）。FOVは肉眼⇄スコープをなめらかに補間
-	aim_blend = move_toward(aim_blend, 1.0 if zoom_stage > 0 else 0.0, AIM_BLEND_SPEED * delta)
-	var target_scope_fov: float = SCOPE_FOVS[maxi(zoom_stage, 1) - 1]
+	# スコープ遷移（_aim_blend方式）。FOVは肉眼⇄スコープをなめらかに補間。
+	# スコープ側FOVは連続倍率から算出（75/倍率）＝ピンチズームにそのまま追従する
+	var scoped := magnification > SCOPE_ON_MAG
+	aim_blend = move_toward(aim_blend, 1.0 if scoped else 0.0, AIM_BLEND_SPEED * delta)
+	var target_scope_fov: float = BASE_FOV / (magnification if scoped else STAGE_MAGS[1])
 	_scope_fov = lerpf(_scope_fov, target_scope_fov, 1.0 - exp(-AIM_BLEND_SPEED * delta))
 	camera.fov = lerpf(BASE_FOV, _scope_fov, aim_blend)
 

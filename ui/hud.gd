@@ -255,7 +255,8 @@ func _process(delta: float) -> void:
 	_mode_gauges.gauges = extra.get("gauges", [])
 	_mode_gauges.visible = not _mode_gauges.gauges.is_empty() and not replay
 	_mode_gauges.queue_redraw()
-	_zoom_label.text = ["1x", "4x", "8x"][rig.zoom_stage]
+	# 倍率表示は連続値（ピンチズーム対応。「4.0x」→「4x」に整形）
+	_zoom_label.text = String.num(rig.magnification, 1).trim_suffix(".0") + "x"
 	_ammo_label.text = "AMMO %d/%d" % [stage.ammo, stage.max_ammo]
 	_targets_label.text = "TARGETS %d/%d" % [stage.hits, stage.hostiles.size()]
 	# 風表示（矢印の向きと本数で強さを表現）。風が弾に効く設定の時だけ
