@@ -10,7 +10,7 @@ const PROGRESS := "progress"   # 進行データ（所持金・武器）の保�
 ## true にすると①プレイ画面に「DEBUG」ボタン（GRAVITY/SPREAD/弾道デバッグ）が出る、
 ## ②ホーム画面に「HORDE表示」トグルが出て、ONにすると隠しモードのHORDEが遊べるようになる。
 ## リリース状態は false。開発者がこの行を true に書き換えて使う（設定画面には出さない）。
-const DEBUG_MODE := true
+const DEBUG_MODE := false
 
 ## HORDE（物量）モードをホーム画面に出すか。既定は非表示＝ホームは2モードだけ。
 ## DEBUG_MODE が true のときにホームの「HORDE表示」トグルで切り替えられる。
