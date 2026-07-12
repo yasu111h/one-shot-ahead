@@ -115,7 +115,17 @@ func _spawn_targets() -> void:
 	# 棟2(中距離ビル)の広間: 悪人が往復し、窓の右端に民間人が立ちすくむ
 	_add_walker(city.mid_walk_from, city.mid_walk_to, 1.1)
 
-	# 民間人だけの部屋(棟2の広間の窓際＋上階の「はずれ部屋」)。撃てば即失敗
+	# サイドビル(棟6右手・棟7左手): 広間を往復する悪人＋小窓/屋上の見張り。
+	# 視点を左右へ大きく振った先にも標的がいる(2026-07-12ユーザー指示の分散)
+	for w in city.side_walks:
+		_add_walker(w.from, w.to, 1.3)
+	for p in city.side_stands:
+		var guard := _add_standing(p, true)
+		# プレイヤーの方を向いて見張る
+		guard.rotation.y = atan2(rig.position.x - p.x, rig.position.z - p.z) if rig != null \
+			else atan2(8.6 - p.x, 35.4 - p.z)
+
+	# 民間人だけの部屋(棟2の広間の窓際＋上階の「はずれ部屋」＋サイドビル広間)。撃てば即失敗
 	for p in city.civil_rooms:
 		_add_standing(p, false)
 
