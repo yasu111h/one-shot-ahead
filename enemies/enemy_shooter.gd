@@ -20,7 +20,6 @@ var on_player_hit := Callable()
 var use_cover := false
 var accuracy := 0.2          # 0..1。EngageMode が位置特定ゲージから毎フレーム更新
 
-const MUZZLE_SPEED := 300.0  # 敵弾の弾速(m/s)。プレイヤーの弾と同じ
 const HIDE_DEPTH := 1.7      # 遮蔽の裏へ沈める深さ(m)
 const EXPOSED_FRAC := 0.42   # 1サイクルのうち顔を出している割合
 const MOVE_FRAC := 0.14      # 沈む／せり上がるのにかける割合(残りは静止)
@@ -158,19 +157,21 @@ func _fire_at_player(muzzle: Vector3) -> void:
 			+ Vector3(0.0, randf_range(-0.6, 1.5), 0.0)
 	var dir := (aim - muzzle).normalized()
 	# 演出弾：勝敗カウンタ（bullets_in_flight等）には一切触れない。
-	# プレイヤーに当たり判定はないので弾はカメラ脇を抜け、背後の壁で火花が散る
+	# プレイヤーに当たり判定はないので弾はカメラ脇を抜け、背後の壁で火花が散る。
+	# 弾速はプレイヤーの弾（stage.muzzle_speed）に合わせる＝トレーサーの見え方が揃う
+	var speed: float = stage.muzzle_speed
 	var bullet := Bullet.new()
 	stage.add_child(bullet)
 	bullet.global_position = muzzle + dir * 0.8
-	bullet.velocity = dir * MUZZLE_SPEED
+	bullet.velocity = dir * speed
 	bullet.hit.connect(func(result: Dictionary) -> void:
 		if is_instance_valid(stage) and stage.fx != null:
 			stage.fx.impact_burst(result.position, result.get("normal", Vector3.UP)))
 	if stage.fx != null:
 		stage.fx.attach_tracer(bullet)
-	# 被弾判定は「弾がこちらへ届く瞬間」に遅らせる（弾速300m/s・time_scale連動）
+	# 被弾判定は「弾がこちらへ届く瞬間」に遅らせる（弾速連動・time_scale連動タイマー）
 	if will_hit and on_player_hit.is_valid():
-		var flight := muzzle.distance_to(aim) / MUZZLE_SPEED
+		var flight := muzzle.distance_to(aim) / speed
 		stage.get_tree().create_timer(flight).timeout.connect(func() -> void:
 			if is_instance_valid(stage) and not stage.game_over and on_player_hit.is_valid():
 				on_player_hit.call())
