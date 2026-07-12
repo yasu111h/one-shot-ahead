@@ -38,25 +38,27 @@ func _build_environment() -> void:
 
 
 func _build_world() -> void:
-	# 地面（3km四方の平原）
+	# 地面（6km四方の草原）。ワールド座標シェーダで草の色むら・土の禿げ・
+	# 刈り込んだ射撃レーン・轍の作業道を描き、どこまで見ても草原が続く
 	var ground := StaticBody3D.new()
 	ground.collision_layer = 0b0001
 	ground.collision_mask = 0
 	var col := CollisionShape3D.new()
 	var box := BoxShape3D.new()
-	box.size = Vector3(3000, 1, 3000)
+	box.size = Vector3(6000, 1, 6000)
 	col.shape = box
 	col.position = Vector3(0, -0.5, 0)
 	ground.add_child(col)
 	var mesh := MeshInstance3D.new()
 	var plane := PlaneMesh.new()
-	plane.size = Vector2(3000, 3000)
-	var mat := StandardMaterial3D.new()
-	mat.albedo_color = Color(0.33, 0.42, 0.29)  # 草原色
-	plane.material = mat
+	plane.size = Vector2(6000, 6000)
+	var gmat := ShaderMaterial.new()
+	gmat.shader = preload("res://shaders/range_ground.gdshader")
 	mesh.mesh = plane
+	mesh.material_override = gmat
 	ground.add_child(mesh)
 	add_child(ground)
+	_build_surroundings()
 	# 狙撃やぐら（見晴らし確保用の高台）
 	var tower := StaticBody3D.new()
 	tower.collision_layer = 0b0001
@@ -94,6 +96,91 @@ func _build_world() -> void:
 		label.modulate = Color(0.95, 0.95, 0.9)
 		label.position = Vector3(-42, 3.5, -d)
 		add_child(label)
+
+
+## 射撃場の周辺情景。防護土手・林帯・遠くの丘・レーンの赤旗。
+## 「見える物には当たり判定」の原則で、旗以外は衝突つき
+func _build_surroundings() -> void:
+	# 標的群の背後の防護土手（実弾射撃場のバックストップ）
+	_scenery_box(Vector3(280.0, 9.0, 26.0), Vector3(0.0, 4.5, -700.0),
+		Color(0.40, 0.34, 0.24))
+	_scenery_box(Vector3(240.0, 4.5, 18.0), Vector3(0.0, 9.0 + 2.2, -700.0),
+		Color(0.35, 0.40, 0.27))  # 土手の上は草
+	# 林帯（射撃場の外周を囲む濃い緑の帯。奥と左右）
+	var wood := Color(0.16, 0.24, 0.15)
+	_scenery_box(Vector3(2400.0, 14.0, 60.0), Vector3(0.0, 7.0, -1150.0), wood)
+	_scenery_box(Vector3(60.0, 12.0, 1800.0), Vector3(-900.0, 6.0, -300.0), wood)
+	_scenery_box(Vector3(60.0, 12.0, 1800.0), Vector3(900.0, 6.0, -300.0), wood)
+	# 遠くの丘（地平線のシルエット。フォグで青く霞む）
+	for s in [[Vector2(-1200.0, -2800.0), Vector3(1800.0, 160.0, 500.0)],
+			[Vector2(900.0, -3200.0), Vector3(2200.0, 220.0, 600.0)],
+			[Vector2(-200.0, -3600.0), Vector3(2600.0, 190.0, 550.0)]]:
+		var at: Vector2 = s[0]
+		var size: Vector3 = s[1]
+		var body := StaticBody3D.new()
+		body.collision_layer = 0b0001
+		body.collision_mask = 0
+		var cs := CollisionShape3D.new()
+		var bx := BoxShape3D.new()
+		bx.size = size
+		cs.shape = bx
+		body.add_child(cs)
+		var mi := MeshInstance3D.new()
+		var prism := PrismMesh.new()
+		prism.size = size
+		var pm := StandardMaterial3D.new()
+		pm.albedo_color = Color(0.30, 0.36, 0.32)
+		prism.material = pm
+		mi.mesh = prism
+		body.add_child(mi)
+		body.position = Vector3(at.x, size.y * 0.5 - 30.0, at.y)
+		add_child(body)
+	# レーン脇の赤旗（射撃中の合図。100mごとの距離マーカーと対で場らしさを出す）
+	for d in [50, 250, 500]:
+		for side in [-52.0, 52.0]:
+			var pole := MeshInstance3D.new()
+			var cyl := CylinderMesh.new()
+			cyl.top_radius = 0.05
+			cyl.bottom_radius = 0.06
+			cyl.height = 4.0
+			var cm := StandardMaterial3D.new()
+			cm.albedo_color = Color(0.75, 0.73, 0.68)
+			cyl.material = cm
+			pole.mesh = cyl
+			pole.position = Vector3(side, 2.0, -float(d))
+			add_child(pole)
+			var flag := MeshInstance3D.new()
+			var fb := BoxMesh.new()
+			fb.size = Vector3(1.1, 0.7, 0.04)
+			var fm := StandardMaterial3D.new()
+			fm.albedo_color = Color(0.8, 0.12, 0.1)
+			fb.material = fm
+			flag.mesh = fb
+			flag.position = Vector3(side + 0.6, 3.6, -float(d))
+			add_child(flag)
+
+
+## 当たり判定つきの情景ボックス
+func _scenery_box(size: Vector3, pos: Vector3, color: Color) -> void:
+	var body := StaticBody3D.new()
+	body.collision_layer = 0b0001
+	body.collision_mask = 0
+	var cs := CollisionShape3D.new()
+	var bx := BoxShape3D.new()
+	bx.size = size
+	cs.shape = bx
+	body.add_child(cs)
+	var mi := MeshInstance3D.new()
+	var mesh := BoxMesh.new()
+	mesh.size = size
+	var mat := StandardMaterial3D.new()
+	mat.albedo_color = color
+	mat.roughness = 1.0
+	mesh.material = mat
+	mi.mesh = mesh
+	body.add_child(mi)
+	body.position = pos
+	add_child(body)
 
 
 func _spawn_targets() -> void:
