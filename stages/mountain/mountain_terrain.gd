@@ -13,7 +13,8 @@ const MESH_STEP := 10.0      # 見た目メッシュの分割ピッチ(m)
 const COL_STEP := 3.0        # 当たり判定のサンプルピッチ(m)
 
 # --- 遠景の山地（プレイエリアの外周。同じノイズから生成＝地平線まで山が続く） ---
-# ※当たり判定なし（標的は最遠1020m・遠景は1.5km以遠のため実弾はほぼ届かない）
+# 当たり判定も同じ64mグリッドで張る＝きわどく峰をかすめた弾も遠景の山肌で止まり、
+# ミスリプレイのカメラが山の中へ入って裏側が見えることがない
 const FAR_EXTENT := 4200.0   # 遠景の広がり ±4.2km
 const FAR_STEP := 64.0       # 遠景メッシュの分割ピッチ(m)
 
@@ -250,6 +251,31 @@ func _build_far_mesh() -> void:
 	mat.shader = preload("res://shaders/mountain_terrain.gdshader")
 	mi.material_override = mat
 	add_child(mi)
+	_build_far_collision()
+
+
+## 遠景の当たり判定（見た目と同じ64mグリッド＝面が一致する）。
+## プレイエリア内は詳細判定(3m)に任せるため、大きく沈めて干渉させない
+func _build_far_collision() -> void:
+	var n := int(FAR_EXTENT * 2.0 / FAR_STEP) + 1
+	var shape := HeightMapShape3D.new()
+	shape.map_width = n
+	shape.map_depth = n
+	var data := PackedFloat32Array()
+	data.resize(n * n)
+	for iz in n:
+		for ix in n:
+			var x := ix * FAR_STEP - FAR_EXTENT
+			var z := iz * FAR_STEP - FAR_EXTENT
+			var y := get_height(x, z)
+			if _inside_play_area(x, z):
+				y = -200.0  # 詳細判定の下へ沈める
+			data[iz * n + ix] = y / FAR_STEP
+	shape.map_data = data
+	var cs := CollisionShape3D.new()
+	cs.shape = shape
+	cs.scale = Vector3(FAR_STEP, FAR_STEP, FAR_STEP)
+	add_child(cs)
 
 
 func _inside_play_area(x: float, z: float) -> bool:
@@ -287,15 +313,28 @@ func _build_river() -> void:
 	var x := -FAR_EXTENT
 	while x < FAR_EXTENT:
 		var seg_w := 100.0 if absf(x) < X_HALF else 400.0
+		var band := 240.0 if absf(x) < X_HALF else 340.0  # 外周は蛇行ずれぶん広く
 		var mid := x + seg_w * 0.5
 		var plane := PlaneMesh.new()
-		# 外周は1枚が長く蛇行が幅内でずれるので、帯を広めに取る
-		plane.size = Vector2(seg_w + 2.0, 240.0 if absf(x) < X_HALF else 340.0)
+		plane.size = Vector2(seg_w + 2.0, band)
 		var mi := MeshInstance3D.new()
 		mi.mesh = plane
 		mi.material_override = mat
 		mi.position = Vector3(mid, WATER_Y, river_z(mid))
 		add_child(mi)
+		# 水面の当たり判定（薄い箱・上面＝水面）。弾は水中へ進まず水面で止まる。
+		# 川岸(水面より高い地形)では地形の判定が先に当たるので誤爆しない
+		var wbody := StaticBody3D.new()
+		wbody.collision_layer = 0b0001
+		wbody.collision_mask = 0
+		wbody.set_meta("water_surface", true)
+		var wcs := CollisionShape3D.new()
+		var wbox := BoxShape3D.new()
+		wbox.size = Vector3(seg_w + 2.0, 0.3, band)
+		wcs.shape = wbox
+		wbody.add_child(wcs)
+		wbody.position = Vector3(mid, WATER_Y - 0.15, river_z(mid))
+		add_child(wbody)
 		x += seg_w
 
 

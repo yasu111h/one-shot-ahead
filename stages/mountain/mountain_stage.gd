@@ -75,48 +75,8 @@ func _build_environment() -> void:
 func _build_world() -> void:
 	terrain = MountainTerrain.new()
 	add_child(terrain)
-	_build_summit_props()
+	# 山頂の小物（ケルン・道標）は廃止（2026-07-12ユーザーFB: 視界の端で浮いて見える）
 	_build_boulders()
-
-
-## 山頂の小物（ケルン=石積みと道標）。狙撃地点の「場所」感を出す
-func _build_summit_props() -> void:
-	var p: Array = MountainTerrain.PADS[0]
-	var base := terrain.get_height(p[0], p[1])
-	var rock_mat := StandardMaterial3D.new()
-	rock_mat.albedo_color = Color(0.5, 0.48, 0.45)
-	rock_mat.roughness = 1.0
-	# ケルン（積み石。上ほど小さい球）。視線の後方に小さく置く
-	for k in 4:
-		var s := 0.34 - float(k) * 0.06
-		var mi := MeshInstance3D.new()
-		var sph := SphereMesh.new()
-		sph.radius = s
-		sph.height = s * 1.2
-		sph.material = rock_mat
-		mi.mesh = sph
-		mi.position = Vector3(p[0] - 4.2, base + 0.18 + float(k) * 0.34, p[1] + 4.5)
-		add_child(mi)
-	# 道標（木の柱＋板）
-	var wood := StandardMaterial3D.new()
-	wood.albedo_color = Color(0.36, 0.26, 0.16)
-	var pole := MeshInstance3D.new()
-	var cyl := CylinderMesh.new()
-	cyl.top_radius = 0.06
-	cyl.bottom_radius = 0.07
-	cyl.height = 1.8
-	cyl.material = wood
-	pole.mesh = cyl
-	pole.position = Vector3(p[0] + 3.0, base + 0.9, p[1] + 1.5)
-	add_child(pole)
-	var sign := MeshInstance3D.new()
-	var sb := BoxMesh.new()
-	sb.size = Vector3(0.9, 0.24, 0.05)
-	sb.material = wood
-	sign.mesh = sb
-	sign.position = Vector3(p[0] + 3.0, base + 1.55, p[1] + 1.5)
-	sign.rotation_degrees.y = 24.0
-	add_child(sign)
 
 
 ## 斜面の大岩（当たり判定つき。§3「見える物には当たり判定」）
@@ -163,6 +123,91 @@ func _spawn_targets() -> void:
 	# ハイカー（民間人・白）。見張りのそばに居合わせる＝誤射禁止の緊張
 	_add_standing(_pad_pos(pads[2]) + Vector3(-4.5, 0, 1.5), false)
 	_add_standing(_pad_pos(pads[5]) + Vector3(3.8, 0, -1.2), false)
+
+
+## 着弾演出の差し替え：川の水面なら土煙ではなく水しぶき
+func _impact_effect(point: Vector3, normal: Vector3) -> void:
+	if point.y < MountainTerrain.WATER_Y + 0.5 \
+			and absf(point.z - terrain.river_z(point.x)) < 175.0:
+		_splash(point)
+		sfx.play_impact()
+	else:
+		super(point, normal)
+
+
+## 水しぶき：噴き上がる水柱＋飛び散る飛沫＋広がる波紋（遠距離でも読める大きさ）
+func _splash(pos: Vector3) -> void:
+	var top := Vector3(pos.x, MountainTerrain.WATER_Y + 0.05, pos.z)
+	# 水柱（白い柱がシュッと立って萎む。遠くからでも一目で分かる主役）
+	var plume := MeshInstance3D.new()
+	var cyl := CylinderMesh.new()
+	cyl.top_radius = 0.22
+	cyl.bottom_radius = 0.55
+	cyl.height = 1.0
+	var pm := StandardMaterial3D.new()
+	pm.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	pm.albedo_color = Color(0.92, 0.97, 1.0, 0.9)
+	pm.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	cyl.material = pm
+	plume.mesh = cyl
+	add_child(plume)
+	plume.global_position = top + Vector3(0, 0.5, 0)
+	plume.scale = Vector3(0.6, 0.3, 0.6)
+	var ptw := create_tween()
+	ptw.tween_property(plume, "scale", Vector3(1.0, 3.4, 1.0), 0.22) \
+		.set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+	ptw.parallel().tween_property(plume, "global_position",
+		top + Vector3(0, 1.9, 0), 0.22)
+	ptw.tween_property(pm, "albedo_color:a", 0.0, 0.55)
+	ptw.parallel().tween_property(plume, "scale", Vector3(1.6, 2.2, 1.6), 0.55)
+	ptw.chain().tween_callback(plume.queue_free)
+	# 飛沫（白い雫が高く上がって落ちる）
+	var p := CPUParticles3D.new()
+	add_child(p)
+	p.global_position = top
+	p.amount = 60
+	p.lifetime = 1.2
+	p.one_shot = true
+	p.explosiveness = 1.0
+	p.direction = Vector3.UP
+	p.spread = 26.0
+	p.initial_velocity_min = 5.0
+	p.initial_velocity_max = 13.0
+	p.gravity = Vector3(0, -14, 0)
+	p.scale_amount_min = 0.6
+	p.scale_amount_max = 1.8
+	var drop := SphereMesh.new()
+	drop.radius = 0.15
+	drop.height = 0.34
+	var m := StandardMaterial3D.new()
+	m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	m.albedo_color = Color(0.85, 0.93, 1.0, 0.85)
+	m.emission_enabled = true
+	m.emission = Color(0.7, 0.85, 1.0)
+	m.emission_energy_multiplier = 0.5
+	drop.material = m
+	p.mesh = drop
+	p.emitting = true
+	get_tree().create_timer(2.5, true, false, true).timeout.connect(p.queue_free)
+	# 波紋（水面に広がる輪。スケールを広げつつ薄くなる板）
+	var ring := MeshInstance3D.new()
+	var torus := TorusMesh.new()
+	torus.inner_radius = 0.55
+	torus.outer_radius = 0.7
+	var rm := StandardMaterial3D.new()
+	rm.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	rm.albedo_color = Color(0.9, 0.96, 1.0, 0.7)
+	rm.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	torus.material = rm
+	ring.mesh = torus
+	add_child(ring)
+	ring.global_position = top
+	ring.scale = Vector3(0.4, 0.12, 0.4)
+	var tw := create_tween()
+	tw.set_parallel(true)
+	tw.tween_property(ring, "scale", Vector3(5.0, 0.12, 5.0), 1.1)
+	tw.tween_property(rm, "albedo_color:a", 0.0, 1.1)
+	tw.chain().tween_callback(ring.queue_free)
 
 
 ## パッド中心の「胴体中心」ワールド座標
