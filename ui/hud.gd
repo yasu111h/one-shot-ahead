@@ -45,6 +45,8 @@ var _debug_panel: PanelContainer
 var _gravity_toggle: Button
 var _spread_toggle: Button
 var _traj_toggle: Button
+var _traj_view: Button      # 弾道デバッグの視点切替（Tabの代替ボタン）
+var _time_toggle: Button    # 時間帯（夜/夕方）切替。対応ステージだけ生成
 var _stamp_t := -1.0
 var _intro_t := 0.0               # 開始からの経過（ミッション文フェード用）
 
@@ -224,11 +226,16 @@ func _build_debug_ui() -> void:
 	_traj_toggle.pressed.connect(func() -> void:
 		stage.debug.toggle_enabled()
 		_update_debug_toggles())
-	var hint := Label.new()
-	hint.text = "TRAJ: F3 / VIEW: TAB"
-	hint.add_theme_font_size_override("font_size", 10)
-	hint.modulate = Color(1, 1, 1, 0.5)
-	vb.add_child(hint)
+	# 弾道デバッグの視点切替（Tabキーの代替。押すたびに通常→真横→着弾点…と巡回）
+	_traj_view = _make_debug_row(vb)
+	_traj_view.pressed.connect(func() -> void:
+		stage.debug.cycle_view())
+	# 時間帯（夜/夕方）切替。ステージが toggle_time_of_day を持つ場合だけ出す
+	if stage.has_method("toggle_time_of_day"):
+		_time_toggle = _make_debug_row(vb)
+		_time_toggle.pressed.connect(func() -> void:
+			stage.toggle_time_of_day()
+			_update_debug_toggles())
 	_update_debug_toggles()
 
 
@@ -427,6 +434,11 @@ func _update_debug_toggles() -> void:
 	_spread_toggle.text = "SPREAD: %s" % ("ON" if Settings.spread_enabled else "OFF")
 	var traj_on: bool = stage.debug != null and stage.debug.enabled
 	_traj_toggle.text = "TRAJECTORY: %s" % ("ON" if traj_on else "OFF")
+	if _traj_view != null:
+		_traj_view.text = "TRAJ VIEW: NEXT >"
+	if _time_toggle != null:
+		var is_dusk: bool = stage.has_method("is_dusk") and stage.is_dusk()
+		_time_toggle.text = "TIME: %s" % ("DUSK" if is_dusk else "NIGHT")
 
 
 ## リザルトの中央カード（タイトル＋RETRY＋STAGE SELECT＋クリア時の「隠す」）。
