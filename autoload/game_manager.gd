@@ -82,6 +82,7 @@ const STAGES := [
 	},
 ]
 const SELECT_SCENE := "res://ui/stage_select.tscn"
+const SHOP_SCENE := "res://ui/shop.tscn"   # ARMORY（武器ショップ）
 
 ## 現在選択中のモード/ステージ（台帳インデックス）。リトライのシーン再読込でも保持される
 var selected_mode := 0
@@ -110,6 +111,11 @@ func goto_stage(stage_idx: int, mode_idx := -1) -> void:
 func goto_select() -> void:
 	reset_time()
 	get_tree().change_scene_to_file(SELECT_SCENE)
+
+
+func goto_shop() -> void:
+	reset_time()
+	get_tree().change_scene_to_file(SHOP_SCENE)
 
 
 ## 選択中モードの GameMode インスタンスを生成する（SniperStage._ready が呼ぶ）。

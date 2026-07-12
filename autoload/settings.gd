@@ -4,6 +4,7 @@ extends Node
 
 const SETTINGS_PATH := "user://settings.cfg"
 const SECTION := "gameplay"
+const PROGRESS := "progress"   # 進行データ（所持金・武器）の保存セクション
 
 ## 命中弾（悪人へ当たる確定弾）でバレットカム（キルカム）を流すか
 var hit_replay_enabled := true:
@@ -48,6 +49,42 @@ var music_volume := 0.7:
 		_save()
 
 
+# --- 進行データ（お金・武器）。docs/武器・ショップ設計.md v1 ---
+
+var money := 0                            # 所持金（契約報酬）
+var owned_weapons: Array = ["ghost"]      # 購入済み武器id
+var equipped_weapon := "ghost"            # 装備中の武器id
+
+
+## 報酬の入金（キル即時・クリアボーナス）。負値は使わない
+func add_money(amount: int) -> void:
+	money += maxi(amount, 0)
+	_save()
+
+
+## 武器の購入。所持金が足りて未所持なら買って装備し true
+func buy_weapon(id: String) -> bool:
+	if id in owned_weapons:
+		return false
+	var w := WeaponDb.by_id(id)
+	if w.id != id or money < w.price:
+		return false
+	money -= w.price
+	owned_weapons.append(id)
+	equipped_weapon = id  # 買ったらそのまま装備（ショップの手数を減らす）
+	_save()
+	return true
+
+
+## 装備切り替え（所持している武器のみ）
+func equip_weapon(id: String) -> bool:
+	if id not in owned_weapons:
+		return false
+	equipped_weapon = id
+	_save()
+	return true
+
+
 func _ready() -> void:
 	_load()
 
@@ -62,6 +99,13 @@ func _load() -> void:
 	spread_enabled = bool(cfg.get_value(SECTION, "spread", true))
 	music_enabled = bool(cfg.get_value(SECTION, "music", true))
 	music_volume = float(cfg.get_value(SECTION, "music_volume", 0.7))
+	money = int(cfg.get_value(PROGRESS, "money", 0))
+	owned_weapons = Array(cfg.get_value(PROGRESS, "owned_weapons", ["ghost"]))
+	if "ghost" not in owned_weapons:
+		owned_weapons.append("ghost")  # 初期武器は常に所持（セーブ破損の安全側）
+	equipped_weapon = str(cfg.get_value(PROGRESS, "equipped_weapon", "ghost"))
+	if equipped_weapon not in owned_weapons:
+		equipped_weapon = "ghost"
 
 
 func _save() -> void:
@@ -73,4 +117,7 @@ func _save() -> void:
 	cfg.set_value(SECTION, "spread", spread_enabled)
 	cfg.set_value(SECTION, "music", music_enabled)
 	cfg.set_value(SECTION, "music_volume", music_volume)
+	cfg.set_value(PROGRESS, "money", money)
+	cfg.set_value(PROGRESS, "owned_weapons", owned_weapons)
+	cfg.set_value(PROGRESS, "equipped_weapon", equipped_weapon)
 	cfg.save(SETTINGS_PATH)
